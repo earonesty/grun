@@ -1242,7 +1242,7 @@ Usage: grun <exec-options> command...
    or: grun -d [<local-daemon-options>]
    or: grun -q [<query-options>] <query-command>
 
-Lightweight compute cluster engine, maybe it should be called "lce".  
+Lightweight job queueing system
 
 For more help, run grun -h, or grun -d -h or grun -q -h
 EOF
