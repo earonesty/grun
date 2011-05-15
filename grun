@@ -1426,7 +1426,9 @@ sub shownodes {
 }
 
 # this reads the registered nodes from disk, and is naive about the internal state of the %nodes hash
-# there's some advantage, efficiency wise to doing this
+# there's some advantage, efficiency wise to doing this, instead of bothering the daemon
+# but the daemon would then need to flush live stats more often
+
 sub shownodes_disk {
 	my $r;
 	$r .= sprintf "%-15s %9s %5s\n", 'Hostname','Memory', 'Cpu';
@@ -1488,19 +1490,47 @@ sub bestunique {
 # returns an array of [host,port], given a list of host[:port] names
 sub expandnodes {
 	my @r;
+	my @n;
 	for (split(/[\s,]/, join ' ', @_)) {
 		my ($h, $p) =  m/^(.*)(:\d+)?$/;
 		$p = $conf{port} if !$p;
-		push @r, [$h, $p];
+		if ($h =~ s/\*/\.\*/g) {
+			if (!@n) {
+				@n=allnodes();	
+			}
+			for (@n) {
+				push @r, [$_->{hostname}, $p] if $_->{hostname} =~ /$h/;
+			}
+		} else {
+			push @r, [$h, $p];
+		}
 	}
 	return @r;
 }
 
-sub startdaemon {
-	my ($dkill, $restart, $reload, $node);
+sub allnodes {
+	my @r;
+	if (%nodes) {
+		return values %nodes;
+	}
+        opendir(D,"$conf{spool}/nodes");
+        while($_=readdir(D)) {
+                $_ = "$conf{spool}/nodes/$_";
+                next unless -f $_;
+                my @node=unpackcmd(slurp($_));
+                push @r, $node[1];
+	}
+	closedir D;
+	return @r;
+}
 
-	GetOptions("kill"=>\$dkill, "RESTART"=>\$restart, "reload"=>\$reload, "nodes=s"=>\$node) ||
+sub startdaemon {
+	my ($dkill, $restart, $reload, $node, $all);
+
+	GetOptions("kill"=>\$dkill, "RESTART"=>\$restart, "reload"=>\$reload, "nodes=s"=>\$node, "all"=>\$all) ||
 		die usage();
+
+	$node = '*' if $all;
 
 	if ($reload || $node) {
 		my @n = $node ? expandnodes($node) : ([$conf{master},$conf{master_port}]);
