@@ -1,0 +1,54 @@
+* Description:
+
+A lightweight replacement for job queueing systems like LSF, Torque, condor, SGE, for private clusters.
+
+
+* Installation:
+
+You need perl.  I tried not to use any modules that don't come with perl.  Put it in /usr/bin.   Type grun -h for help with the configuration/setup.  Basically you stick it on all the machines, and you put a "master" in the main config.   
+
+Example /etc/grun.conf on the master node:
+
+service:   queue
+log_file:  /var/log/grun.log
+
+Example /etc/grun.conf on a compute node:
+
+master:    foo.mydomain.local
+service:   exec
+log_file:  /var/log/grun.log
+
+* What you do with it:
+
+Submit jobs, grun puts them in a queue, the queue is on disk so machines can lose connection any time, and jobs keep going.   Specify resouces requirements, or not - and have it figure stuff out.
+
+grun will give jobs to machines with low load.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.
+
+That's about all it does. 
+
+* What it does now:
+
+It does the queueing, i/o, node-matching to requirements, and has a decent config system.   Trying to leverage perl a lot.  I simluated 1000 nodes and 10K jobs and it has no problem with that.  The forkless socket system is a big help. 
+
+* What it doesn't do yet:
+
+It needs a "plugin" architecture.  Should be easy with perl.
+
+It doesn't do job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.   But sqlite has locking issues with NFS, and I really like the directory-based system now.   But, I sense switching to sqlite is the right way to go.
+
+* Goals:
+
+Small 		Keep the code under a few k lines, should be readable.   Lots of comments.
+Simple 		Easy configuration, guesses default values
+Smart		Keeps track of stats.  Learns what to do with things.   Puts the right jobs on the right machines.
+Fast		Hundreds of thousands of jobs per hour on tens of thousands of machines should be easy.
+Configurable	Make up lots of new things you want it to keep track of and allocate to jobs.
+
+* Features to avoid:
+
+No security	Grun has no security.   It has to be behind a firewall on dedicated machines.  This limits it, and keeps it simple.  It's not hard to put up an ssh tunnel, and make it work at EC2.   But I'm not building in kerberos or stuff like that.
+
+One platform	Grun only works on unix-like machines that have perl installed.
+
+Nothing fancy	Grun doesn't support MPI and other fancy grid things.  ( Use condor for that, it works great. )
+
