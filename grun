@@ -44,10 +44,12 @@ chomp $def{hostname};
 
 my ($qinfo, $help, $config);
 
-GetOptions("help"=>\$help, "daemon"=>\$daemon, "CONF=s"=>\$config, "trace"=>\$def{trace}, "query"=>\$qinfo) ||
+GetOptions("help"=>\$help, "daemon"=>\$daemon, "CONF:s"=>\$config, "trace"=>\$def{trace}, "query"=>\$qinfo) ||
 	die usage();
 
 $def{config} = $config if $config;
+
+$help = 1 if defined $config && !$config;
 
 if ($help) {
 	print usage();
@@ -1244,7 +1246,7 @@ Usage: grun <exec-options> command...
 
 Lightweight job queueing system
 
-For more help, run grun -h, or grun -d -h or grun -q -h
+For more help, run grun -h, grun -d -h, grun -C -h or grun -q -h.
 EOF
 
 	$u .= <<'EOF' unless $daemon || $qinfo;
@@ -1298,7 +1300,7 @@ Common Options:
     -h|elp          Show this help page
 EOF
 
-	$u .= <<'EOF' if $config;
+	$u .= <<'EOF' if defined $config;
 
 Configuration File:
 
