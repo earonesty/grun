@@ -45,6 +45,7 @@ my (%conf, %def);
 $def{config} = "/etc/grun.conf";		# config file
 $def{spool} = "/var/spool/grun";		# dir to place jobs
 $def{port} = 5184;				# listen/connect port
+$def{bind} = '0.0.0.0';				# listen addr
 $def{env} = ['PATH'];				# list of environment vars to copy from submit through to exec
 $def{ping_secs} = 30;				# how often to tell about load/mem/stats
 $def{idle_load} = .3;				# how often to tell about load/mem/stats
@@ -995,6 +996,10 @@ sub notifystat {
 
 	# tell scheduler the status
 
+	# this breaks multi-scheduling... but that isn't supported yet, and tunnels are acting odd
+	$info->{ip} = $conf{master};
+	$info->{port} = $conf{master_port};
+
 	funpack("$conf{spool}/pids/$kid.stat", $info);
 	my $sock = _sendcmd($info->{ip}, $info->{port}, 'jstat', id=>$info->{id}, status=>$info->{status}, pid=>$kid, jrun=>$info->{jrun}, error=>$info->{error});
 	$read_set->add($sock) if $sock;
@@ -1092,6 +1097,7 @@ sub readconf {
 	$conf{master_port} = $1 if $conf{master} =~ s/:(\d+)$//;
 	$conf{master_port} = $conf{port} if !$conf{master_port};
 
+	$conf{port} = $1 if $conf{bind} =~ s/:(\d+)$//;
 }
 
 sub _readconf {
@@ -1334,7 +1340,8 @@ Common variables:
     spool           (/var/spool/grun) Location for queue & io temp storage
     log_file	    Location of the log
     services        Must be 'queue' and/or 'exec'
-    port            Port to listen on
+    port            Port to listen on (5184)
+    bind[:port]     Address to bind to (0.0.0.0)
     trace           Turn tracing on for the whole server
 
 Queue config vars:
@@ -1589,7 +1596,7 @@ sub startdaemon {
 		$SIG{TERM} = $SIG{INT};
 		$SIG{HUP}  = \&init;
 
-		$listener = IO::Socket::INET->new(Proto=>"tcp",LocalPort=>$conf{port}, LocalAddr=>'0.0.0.0', Reuse=>1, Timeout=>1, Listen=>100)
+		$listener = IO::Socket::INET->new(Proto=>"tcp",LocalPort=>$conf{port}, LocalAddr=>$conf{bind}, Reuse=>1, Timeout=>1, Listen=>100)
 		  or die "Can't make TCP server on port $conf{port}: $@";
 		$read_set = new IO::Select();
 		$write_set = new IO::Select();
