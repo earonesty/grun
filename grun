@@ -89,17 +89,25 @@ if ($qinfo) {
 	my %opt;
 	GetOptions(\%opt, "count=i") || die usage();
 	my $cmd = shift @ARGV;
-	die usage() if !$cmd || @ARGV > 0;
+	die usage() if !$cmd;
 	
+	if ($conf{trace}) {
+		$opt{trace} = 1;
+		sendcmd($conf{master}, $conf{master_port}, 'trace', 1);
+	}
 	my @arg = @ARGV;
 	$cmd =~ s/^-//;
-	my $tmp = substr bestunique($cmd, qw(config status jobs history)), 0, 4;
+	my $tmp = substr bestunique($cmd, qw(config status jobs file history)), 0, 4;
 	if (!$tmp) {
 		die "Command $cmd is not available, for help type grun -query -help\n";
 	}
 	$cmd = $tmp;
 
-	if (!$ENV{_GRUN} && (!$conf{services}->{queue} || $cmd =~ /^conf|stat$/)) {
+	if ($cmd eq 'file') {
+		my ($res, $error) = waitio($conf{master}, $conf{master_port}, "xcmd", $cmd, @arg);
+		die $error, "\n" if $error;
+		print $res if $res;
+	} elsif (!$ENV{_GRUN} && (!$conf{services}->{queue} || $cmd =~ /^conf|stat$/)) {
 		# for now, status goes to the main node, and forks ... this could get ugly, if called a lot
 		my ($res) = waitmsg($conf{master}, $conf{master_port}, "xcmd", $cmd, @arg);
 		print $res;
@@ -282,6 +290,7 @@ sub readsocks {
 					# leave it open, and in the read-list
 				} elsif ($resp[0] eq $SOCK_FILE) {
 					# read from one or more files, and send them through the socket
+					xlog("debug", "Got a file request [@resp]\n") if $conf{trace};
 					*$sock{HASH}->{file} = [splice(@resp, 1)];
 					$write_set->add($sock);
 				} else {
@@ -318,7 +327,7 @@ sub readsocks {
 					my $head = "name:$file\nlen:" . (-s $file) . "\n";
 					my $io = new IO::File;
 					if (!open ($io, $file)) {
-						$head .= "error: '$file' : $!\n";
+						$head .= "error:'$file' : $!\n";
 					} else {
 						*$sock{HASH}->{io} = $io;
 					}
@@ -374,17 +383,19 @@ sub process_message {
 	if ($cmd eq 'xcmd') {
 		# these commands 'query or interfere' with normal running of the server 
 		# they are initiated by a user	
+		my $ip = $sock->peerhost();
+
 		if ($args[0] eq 'relo') {
 			# reread config... maybe rebind stuff too
-			xlog("note", "Reload from remote command");
+			xlog("note", "Reload from remote command ($ip)");
 			init();
 			return 'ok';
 		} elsif ($args[0] eq 'term') {
-			xlog("note", "Shutdown from remote command");
+			xlog("note", "Shutdown from remote command ($ip)");
 			$quit = 1;
 			return 'ok';
 		} elsif ($args[0] eq 'rest') {
-			xlog("note", "Restarting from remote command");
+			xlog("note", "Restarting from remote command ($ip)");
 			close_sock($listener);
 			if (!fork) {
 				exec($0, '-d');
@@ -400,6 +411,10 @@ sub process_message {
 			return showconf();
 		} elsif ($args[0] eq 'jobs') {
 			return showjobs();
+		} elsif ($args[0] eq 'file') {
+			shift @args;
+			xlog("note", "Sending file [@args] to remote via xcmd ($ip)");
+			return ($SOCK_FILE, @args);
 		} else {
 			return "Error: unknown xcmd '$args[0]'";	
 		}
@@ -1140,13 +1155,14 @@ sub waitio {
                 return undef;
         }
         my ($dat, $stat, $got) = ('', '', 0);
+	my $err;
         while ($got<3) {
 		my $buf = '';
 		my %head;
 		my $break = 0;
 		do {
 			$buf .= $dat;
-			while ($buf =~ s/^(\w+):\s*(\S+)\n//) {
+			while ($buf =~ s/^([^\n]+?) *: *([^\n]*?) *\n//) {
 				$head{$1}=$2;
 			}
 			if ($buf =~ s/^\n//) {
@@ -1154,6 +1170,8 @@ sub waitio {
 				$break = 1;
 			}
 		} while (!$break && $sock->sysread($dat, 4096));
+
+		$err = $head{error} if $head{error};
 
 #		print Dumper(\%head);
 #		print "DAT IS: $dat\n";
@@ -1183,8 +1201,11 @@ sub waitio {
 #			print STDERR "left: $left dat:" . length($dat) . "\n"; 
 		} while ($left>0 && $sock->sysread($dat, 4096));
 	}
-	$stat = gunpack($stat);
-        return ($stat->{status}, $stat->{error});
+	if ($stat) {
+		$stat = gunpack($stat);
+		return ($stat->{status}, $stat->{error});
+	}
+	return ($err eq '', $err);
 }
 
 sub waitmsg {
