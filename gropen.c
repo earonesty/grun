@@ -23,6 +23,7 @@
 
 int (*next__open)(const char *, int, mode_t);
 int (*nextopen)(const char *, int, mode_t);
+int (*nextopen64)(const char *, int, mode_t);
 int (*nextstat)(int ver, const char *, struct stat *);
 int (*next__lxstat)(int ver, const char *, struct stat *);
 
@@ -45,6 +46,10 @@ void _init(void)
   }
 
   nextopen = dlsym(RTLD_NEXT,"open");
+  if ((errval = dlerror()) != NULL) {
+    fprintf(stderr, "dlsym(open): %s\n", errval);
+  }
+  nextopen64 = dlsym(RTLD_NEXT,"open64");
   if ((errval = dlerror()) != NULL) {
     fprintf(stderr, "dlsym(open): %s\n", errval);
   }
@@ -85,39 +90,54 @@ int openhandler(const char *pathname, int flags, int mode, int stat)
 #endif
 	snprintf(buffer, sizeof(buffer), fetch_program, pathname);
 
+	/* program i call should not, also, preload me */
+	unsetenv("LD_PRELOAD");
 	if (rv=system(buffer)) {
 		fprintf(stderr, "Can't run fetch program: %s\n", buffer);
 		return rv;
 	}
 
+#ifdef DEBUG
+  fprintf(stderr, "FP OK %d\n", rv);
+#endif
 	fd = (*nextopen)(pathname, flags, mode);
 	return fd;
 }
 
 int open(const char *pathname, int flags, mode_t mode)
 {
+#ifdef DEBUG
+  fprintf(stderr, "GotOPEN: %s, %s\n", pathname, fetch_program);
+#endif
 	struct stat st; 
 	if (fetch_program && ((flags & O_ACCMODE) != O_CREAT)) {
-		if ((*nextstat)(0, pathname, &st)) {
-			if (errno == ENOENT) {
-				return openhandler(pathname, flags, mode, 0);
-			}
-		}
+                stat(pathname, &st);
 	}
-	return (*nextopen)(pathname, flags, 0);
+	return (*nextopen)(pathname, flags, mode);
+}
+
+int open64(const char *pathname, int flags, mode_t mode)
+{
+#ifdef DEBUG
+  fprintf(stderr, "GotOPEN 64: %s, %s\n", pathname, fetch_program);
+#endif
+        struct stat st;
+        if (fetch_program && ((flags & O_ACCMODE) != O_CREAT)) {
+                stat(pathname, &st);
+        }
+        return (*nextopen64)(pathname, flags, mode);
 }
 
 int __open(const char *pathname, int flags, int mode)
 {
+#ifdef DEBUG
+  fprintf(stderr, "Got__OPEN\n", pathname);
+#endif
 	struct stat st; 
         if (fetch_program && ((flags & O_ACCMODE) != O_CREAT)) {
-                if ((*nextstat)(0, pathname, &st)) {
-                        if (errno == ENOENT) {
-                                return openhandler(pathname, flags, mode, 0);
-                        }
-                }
+                stat(pathname, &st);
         }
-        return (*nextopen)(pathname, flags, 0);
+        return (*nextopen)(pathname, flags, mode);
 }
 
 
