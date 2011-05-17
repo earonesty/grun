@@ -1198,7 +1198,7 @@ sub waitio {
 		my $statstr;  
 		my $fh;
 
-		if ($opts->{inplace}) {
+		if ($opts->{inplace} && (!$head{error})) {
 			# inplace file retrieval
 			my $dir = $head{name};
 			$dir =~ s/[^\/]+$//;
