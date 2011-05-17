@@ -15,7 +15,7 @@ master=`perl -ne 'print $1 if /^\s*master:\s*(\S+)/i' $GRUN_CONF`;
 
 if [[ ! $HOSTNAME =~ "^$master" ]]; then
 	export GFETCH_PROGRAM
-	export LD_PRELOAD=gropen.so
+	export LD_PRELOAD=/var/lib/gropen.so
 	$*
 fi
 
