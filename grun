@@ -107,7 +107,6 @@ if ($qinfo) {
 	if ($cmd eq 'file') {
 		my ($res, $error) = waitio($conf{master}, $conf{master_port}, "xcmd", $cmd, @arg);
 		die $error, "\n" if $error;
-		print $res if $res;
 	} elsif (!$ENV{_GRUN} && (!$conf{services}->{queue} || $cmd =~ /^conf|stat$/)) {
 		# for now, status goes to the main node, and forks ... this could get ugly, if called a lot
 		my ($res) = waitmsg($conf{master}, $conf{master_port}, "xcmd", $cmd, @arg);
