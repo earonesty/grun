@@ -1,0 +1,21 @@
+#!/bin/bash
+
+#
+# Wraps a program with a library that fetches missing files from the "master" server
+# Fetch program should cache not-found using some mechanism for a short period of time
+# Fetch program should write the file to disk with the same user & permissions as the original
+#
+
+# the defaults below work... but the fetch program doesn't compress data (yet)
+
+[ -z "$GRUN_CONF" ] 		&& GRUN_CONF=/etc/grun.conf
+[ -z "$GFETCH_PROGRAM" ] 	&& GFETCH_PROGRAM="grun -q -i file %s"
+
+master=`perl -ne 'print $1 if /^\s*master:\s*(\S+)/i' $GRUN_CONF`;
+
+if [[ ! $HOSTNAME =~ "^$master" ]]; then
+	export GFETCH_PROGRAM
+	export LD_PRELOAD=gropen.so
+	$*
+fi
+
