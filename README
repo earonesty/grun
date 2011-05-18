@@ -18,6 +18,14 @@ master:    foo.mydomain.local
 service:   exec
 log_file:  /var/log/grun.log
 
+Example of a conf on an ssh tunneled EC2 node, with autostaging via gwrap:
+
+services:       exec
+master:         127.0.0.1:5184
+bind:           127.0.0.2:5184
+wrap:           /usr/bin/gwrap
+fetch_path:     /opt:/mnt/ufs
+
 * What you do with it:
 
 Submit jobs, grun puts them in a queue, the queue is on disk so machines can lose connection any time, and jobs keep going.   Specify resouces requirements, or not - and have it figure stuff out.
