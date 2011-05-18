@@ -11,13 +11,12 @@
 [ -z "$GRUN_CONF" ] 		&& GRUN_CONF=/etc/grun.conf
 [ -z "$GFETCH_PROGRAM" ] 	&& GFETCH_PROGRAM="grun -q -i -s file %s"
 
-master=`perl -ne 'print $1 if /^\s*master:\s*(\S+)/i' $GRUN_CONF`;
+master=`perl -ne 'print $1 if /^\s*master:\s*([^:]+)/i' $GRUN_CONF`;
 GFETCH_PATH=`perl -ne 'print $1 if /^\s*fetch_path:\s*(\S+)/i' $GRUN_CONF`;
-
 
 if [[ ! $HOSTNAME =~ "^$master" ]]; then
 	export GFETCH_PROGRAM GFETCH_PATH
-	export LD_PRELOAD=/var/lib/gropen.so
+	export LD_PRELOAD=/var/lib/gwrap.so
 	$*
 fi
 
