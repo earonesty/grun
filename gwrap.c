@@ -29,7 +29,7 @@
 /*
  * Compile with:
  *
- *    gcc -nostartfiles -fpic -shared -o gropen.so gropen.c -ldl
+ *    gcc -nostartfiles -fpic -shared -o gwrap.so gwrap.c -ldl
  */
 
 /* #define DEBUG 1 */
