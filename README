@@ -26,6 +26,10 @@ bind:           127.0.0.2:5184
 wrap:           /usr/bin/gwrap
 fetch_path:     /opt:/mnt/ufs
 
+Compile gwrap (if desired):
+
+gcc -nostartfiles -fpic -shared -o gwrap.so gwrap.c -ldl
+
 * What you do with it:
 
 Submit jobs, grun puts them in a queue, the queue is on disk so machines can lose connection any time, and jobs keep going.   Specify resouces requirements, or not - and have it figure stuff out.
