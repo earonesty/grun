@@ -105,9 +105,14 @@ if ($qinfo) {
 	$cmd = $tmp;
 
 	if ($cmd eq 'file') {
+		my $cwd = cwd;
 		my @need;
 		for (@arg) {
-			push @need, $_ unless -e $_;
+			next if -e $_;
+			if ($_ !~ /^\//) {
+				$_ = "$cwd/$_";	
+			}
+			push @need, $_;
 		}
 		if (@need) {
 			my ($res, $error) = waitio({inplace=>$opt{inplace}}, $conf{master}, $conf{master_port}, "xcmd", $cmd, @need);
@@ -524,6 +529,10 @@ sub process_message {
 
 		my $pid;
 
+		if ($conf{wrap}) {
+			@cmd = ($conf{wrap}, @cmd);
+		}
+
 		if (!$err && !($pid=fork)) {
 			if (! defined $pid) {
 				$err = "Can't fork";
@@ -572,11 +581,7 @@ sub process_message {
 				$err = $@ if $@;
 
 				if (!$err) {
-					if ($conf{wrap}) {
-						exec($conf{wrap}, @cmd);
-					} else {
-						exec(@cmd);
-					}
+					exec(@cmd);
 					$err=$!;
 				}
 
@@ -594,7 +599,7 @@ sub process_message {
 			xlog("note", "Error $err with job $opts->{id}");
 		}
 
-		xlog("note", "Starting job $opts->{id}, pid $pid") if !$err;
+		xlog("note", "Starting job $opts->{id}, pid $pid, '@cmd'") if !$err;
 
 		my $file = "$conf{spool}/pids/$pid";
 
