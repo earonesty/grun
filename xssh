@@ -1,0 +1,352 @@
+#!/usr/bin/perl
+
+######### xssh
+# launches a program on any number of nodes
+# can be the same on all, or variations based on expansion
+#########
+
+#    grun - lightweight jobs queueing system
+#    Copyright (C) 2011 Erik Aronesty
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use strict;
+use Getopt::Long qw(:config pass_through);
+$Getopt::Long::order = $REQUIRE_ORDER;
+use IO::File;
+use Cwd qw(cwd abs_path);
+use Data::Dumper;
+
+sub usage;
+
+our %opt;
+
+my $pwd = cwd();
+die unless $pwd;
+
+my $defnodes;
+my %filerules;
+my @mnt;
+
+readconf();
+
+GetOptions(\%opt, "nodes=s", "all", "echo", "plain", "seq", "sudo", "debug", "recursive") || die usage();
+
+$opt{nodes} .= " $defnodes" if (!defined($opt{nodes}) || $opt{nodes}=~ s/^\+//);
+$opt{nodes} .= " f0 pipeline" if $opt{all};
+$opt{mode} = $0 =~ /diff/ ? 'diff' : $0 =~ /sync/ ? 'sync' : 'ssh';
+
+die usage() unless @ARGV;
+
+my $spid;
+# this kills kids when you press control-C
+sub on_int {
+	kill 2, $spid if $spid;
+}
+
+# expand node names
+my @nodes=expandnodes($opt{nodes});
+
+# uniquify
+my %seen;
+foreach my $node (@nodes) {chomp; $seen{$node}=1 if $node; }
+@nodes=keys(%seen);
+
+print STDERR "Nodes: " . join(' ', @nodes). "\n\n";
+
+my $windows= $^O =~ /^(ms)?win/i;
+my $host = $windows ? $ENV{COMPUTERNAME} : $ENV{HOSTNAME};
+
+# on windows, plink is the ssh equivalent TODO: config this
+my $ssh = $windows?'plink':'ssh';
+my $sshopts = '-o ForwardX11=no -o ForwardX11Trusted=no -o SendEnv=PATH';
+
+# launch kids on the nodes
+
+if ($opt{mode} eq 'diff') {
+	for (@ARGV) {
+                my $f = abs_path($_);
+                if (! -s $f) {
+                        warn "file not found: $f";
+                        next;
+                }
+                if (-d $f) {
+                        die "Won't diff $f recursively";
+                }
+		for (@mnt) {
+			if ($f =~ /^\Q$_\E/) {
+				die "$_ is mounted now, so no need to $opt{mode}"
+			}
+		}
+		my $fb = $f;
+		$fb =~ s/.*\///; 
+                for my $node (@nodes) {
+                        next if $ENV{HOSTNAME} =~ /^$node\b/;
+
+                        my $opt;
+                        if (!$opt && $opt{sudo}) {
+                                $opt="--rsync-path='sudo rsync' ";
+                        }
+                        $opt = "--recursive $opt" if $opt{recursive};
+			my $tmp = "/tmp/xdiff:$node:$fb";
+                        fexec($ENV{HOSTNAME}, "rsync -e 'ssh $sshopts' -lpgtoD $opt $node:$f $tmp");
+                }
+		while (wait != -1) {};
+                for my $node (@nodes) {
+                        next if $ENV{HOSTNAME} =~ /^$node/;
+			my $tmp = "/tmp/xdiff:$node:$fb";
+			my $pre = "sudo " if $opt{sudo};
+			system("${pre}diff -u $tmp $f");
+			unlink $tmp;
+		}
+	}
+}
+
+if ($opt{mode} eq 'sync') {
+	for (@ARGV) {
+		my $f = abs_path($_);	
+		if (! -s $f) {
+			warn "file not found: $f";
+			next;
+		}
+
+                for (@mnt) {
+                        if ($f =~ /^\Q$_\E/) {
+                                die "$_ is mounted now, so no need to $opt{mode}"
+                        }
+                }
+
+		my %nosync;
+		if ($filerules{$f}) {
+			for (@{$filerules{$f}}) {
+				my ($rule, $nodes) = @$_;
+				if ($rule eq 'nosync') {
+					if ($nodes eq '*') {
+						die "Won't sync $f because of rule in config"; 
+					} else {
+						for (expandnodes($nodes)) {
+							$nosync{$_} = 1;
+						}
+					}
+				}
+			}
+		}
+		if (-d $f && !$opt{recursive}) {
+			die "Won't sync $f recursively unless you specify -r or --recursive\n";	
+		}
+		for my $node (@nodes) {
+			my $opt;
+			next if $ENV{HOSTNAME} =~ /^$node\./;
+			if ($nosync{$node}) {
+				print "Skipping $node because of config.\n";
+				next;
+			}
+
+			if (!$opt && $opt{sudo}) {
+				$opt="--rsync-path='sudo rsync' ";
+			}
+			$opt = "--recursive $opt" if $opt{recursive};
+			my $d = $f;
+			$f = $f . '/' if (-d $f);
+			fexec($ENV{HOSTNAME}, "rsync -e 'ssh $sshopts' -lpgtoD $opt$f $node:$d");
+		}
+	}
+}
+
+if ($opt{mode} eq 'ssh') {
+	my @cmd=@ARGV;
+	for my $node (@nodes) {
+			if ($opt{seq}) {
+				nexec($node, @cmd);
+			} else {
+				fexec($node, @cmd);
+			}
+	}
+}
+
+# wait for all kids
+while (wait != -1) {};
+
+sub nexec {
+	my ($node, @cmd) = @_;
+
+	my $cmd;
+	my $norig = $node;
+
+	grep s/(["()'])/\\$1/g, @cmd if ($opt{mode} eq 'ssh');
+	$cmd = join " ", @cmd;
+	$cmd= "cd ${pwd} && " . $cmd if ($opt{mode} eq 'ssh');
+
+	print "in nexec $host ENVH $ENV{HOSTNAME}\n" if $opt{debug};
+	if (!($ENV{HOSTNAME} =~ /^$node/)) {	# not on my own machine
+		print "$host is host\n" if $opt{debug};
+
+		# if you're on windows... specify the username
+		my $prefix = "$ENV{USERNAME}\@" if $windows;
+		
+		# quote the command
+		$cmd =~ s/(["\$])/\\$1/g;
+		$cmd= "$ssh $sshopts $prefix$node \"$cmd\"";
+		print "mod cmd is $cmd\n" if $opt{debug};
+	}
+
+	print $cmd, "\n" if $opt{echo};
+
+	if ($opt{plain}) {
+		system($cmd);
+	} else {
+		# capture stderr and stdout
+		$spid=open(my $io=new IO::File, "( $cmd ) 2>&1 |");
+		if (!$spid) {
+			# failed to exec
+			die "$norig\t$!\n";
+		}
+		# show output, with nodes prefixed
+		while(<$io>) {
+				print "$norig\t$_" if $_;
+		}
+		close $io;
+	}
+
+	wait;	# don't exit until child is really done... not just done closing their pipe
+}
+
+# show usage
+sub usage {
+if ($opt{mode} eq 'ssh') {
+	return <<EOF
+usage: xssh [-n \"n1 n2 ...\"] [-a] command\n
+	-n[odes]: node list
+	-a[ll]  : run on all available machines
+	-e[cho] : echo on
+	-seq    : run each node sequentially
+
+Node Names:
+You can specify nodes as single digits, whole hostnames, or 
+   other short names like 'f0', or 'pipeline'.  
+
+Rewriting occurs accoring to the rules in the xssh.conf.
+
+Config example:
+   rewrite: (\d)       to: my-node-$1
+   nodes: 0 1 2 3 4 my-head-node
+EOF
+}
+
+if ($opt{mode} eq 'sync') {
+        return <<EOF
+usage: xsync [-n \"n1 n2 ...\"] [-a] file1 [... fileN]\n
+        -n[odes]: node list
+        -a[ll]  : run on all available machines
+        -e[cho] : echo on
+        -seq    : run each node sequentially
+
+Node Names:
+You can specify nodes as single digits, whole hostnames, or
+   other short names like 'f0', or 'pipeline'.
+
+Config file example:
+
+rewrite: (\d)       to: my-node-$1
+nodes: 0 1 2 3 4 my-head-node
+EOF
+}
+
+}
+
+sub fexec {
+	my ($node, @cmd) = @_;
+	my $pid = fork;
+	if (not defined $pid) {
+		die "can't fork"
+	} elsif ($pid == 0) {
+		$SIG{INT}=on_int if !$windows;
+		print "b4 nexec $node @cmd\n" if $opt{debug};
+		nexec($node, @cmd);
+		exit 0;
+	} else {
+		# parent
+	}
+}
+
+my @rewrite;
+my %groups;
+
+sub readconf {
+	my @dn;
+	my ($name,$passwd,$uid,$gid,$quota,$comment,$gcos,$dir) = getpwuid($<);
+	my $ok = open(IN, "$dir/.xssh.conf") if $dir;
+	$ok = open(IN, "/etc/xssh.conf") unless $ok;
+	die "Need /etc/xssh.conf or ~/.xssh.conf\n" unless $ok;
+
+	# list mounts
+	my @tmp = `mount`;
+	for (@tmp) {
+		if (m/:\S+ on (\S+) type nfs/) {
+			push @mnt, $1;
+		}
+	}
+
+	while (<IN>) {
+		next if /^#/;
+		next if /^\s*$/;
+		my ($cmd, $suf, $dat) = m|^(\w+)(?:-([^: ]+))?\s*:\s*(.*)|;
+		if ($cmd eq 'rewrite') {
+			my ($from,$to) = $dat =~ /^\s*(.*?)\s+(?:to:)?\s*(.*?)\s*$/;
+			push @rewrite, [$from, '"' . $to . '"'];
+		} elsif ($cmd eq 'nodes' || $cmd eq 'node') {
+			if (!$suf) {
+				$defnodes .= "$dat ";
+			} else {
+				my @n=expandnodes($dat);
+				push @{$groups{$suf}}, @n;
+			}
+		} elsif ($cmd eq 'file') {
+			my ($path,$rule,$value,$rule2,$value2) = $dat =~ /^\s*(.*?)\s+(?:(\w+):\s*(.*?)\s*)+$/;
+			push @{$filerules{$path}}, [$rule, $value];
+			push @{$filerules{$path}}, [$rule2, $value2] if $rule2;
+		}
+	}
+	close IN;
+	$defnodes =~ s/\s+$//;
+}
+
+sub expandnodes {
+	my $dat = shift;
+	my @n=split(/[\s,]+/, $dat);	
+	my @d;
+	for my $n (@n) {
+		next unless length($n)>0;
+		if ($groups{$n}) {
+			push @d, @{$groups{$n}};
+		} else {
+			$n = rewrite($n);
+			push @d, $n;
+		}
+	}
+	return @d;
+}
+
+
+
+sub rewrite {
+	my $n = shift;
+	for my $rw (@rewrite) {
+		my ($from, $to) = @$rw;
+		$n =~ s/^$from$/$to/ee;
+		die "bad rewrite: $from to: $to" if $n =~ /\$/;
+	}
+	return $n;
+}
+
