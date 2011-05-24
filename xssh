@@ -41,10 +41,9 @@ my @mnt;
 
 readconf();
 
-GetOptions(\%opt, "nodes=s", "all", "echo", "plain", "seq", "sudo", "debug", "recursive") || die usage();
+GetOptions(\%opt, "nodes=s@", "echo", "plain", "seq", "sudo", "debug", "recursive") || die usage();
 
-$opt{nodes} .= " $defnodes" if (!defined($opt{nodes}) || $opt{nodes}=~ s/^\+//);
-$opt{nodes} .= " f0 pipeline" if $opt{all};
+push @{$opt{nodes}}, $defnodes if (!defined($opt{nodes}));
 $opt{mode} = $0 =~ /diff/ ? 'diff' : $0 =~ /sync/ ? 'sync' : 'ssh';
 
 die usage() unless @ARGV;
@@ -55,6 +54,7 @@ sub on_int {
 	kill 2, $spid if $spid;
 }
 
+$opt{nodes} = join ',', @{$opt{nodes}}; 
 # expand node names
 my @nodes=expandnodes($opt{nodes});
 
@@ -326,14 +326,28 @@ sub expandnodes {
 	my $dat = shift;
 	my @n=split(/[\s,]+/, $dat);	
 	my @d;
+	my @a;
+	my @x;
 	for my $n (@n) {
+		my $not = 1 if $n =~ s/^\-//;
 		next unless length($n)>0;
-		if ($groups{$n}) {
-			push @d, @{$groups{$n}};
+
+		if ($n eq '+all') {
+			@a=expandnodes($defnodes);
+		} elsif ($groups{$n}) {
+			@a=@{$groups{$n}};
 		} else {
 			$n = rewrite($n);
-			push @d, $n;
+			@a=($n);
 		}
+		if ($not) {
+			push @x, @a;
+		} else {
+			push @d, @a;
+		}
+	}
+	for my $x (@x) {
+		@d = grep !/^\Q$x\E$/, @d;
 	}
 	return @d;
 }
