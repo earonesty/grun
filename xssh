@@ -70,7 +70,7 @@ my $host = $windows ? $ENV{COMPUTERNAME} : $ENV{HOSTNAME};
 
 # on windows, plink is the ssh equivalent TODO: config this
 my $ssh = $windows?'plink':'ssh';
-my $sshopts = '-o ForwardX11=no -o ForwardX11Trusted=no -o SendEnv=PATH';
+my $sshopts = '-o ForwardX11=no -o ForwardX11Trusted=no -o SendEnv=PATH -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no';
 
 # launch kids on the nodes
 
@@ -214,6 +214,7 @@ sub nexec {
 		}
 		# show output, with nodes prefixed
 		while(<$io>) {
+				next if $_ =~ /^Warning: Permanently added.*to the list of known hosts\./;	
 				print "$norig\t$_" if $_;
 		}
 		close $io;
