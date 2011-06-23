@@ -2,7 +2,6 @@
 
 A lightweight replacement for job queueing systems like LSF, Torque, condor, SGE, for private clusters.
 
-
 * Installation:
 
 You need perl.  I tried not to use any modules that don't come with perl.  Put it in /usr/bin.   Type grun -h for help with the configuration/setup.  Basically you stick it on all the machines, and you put a "master" in the main config.   
@@ -34,9 +33,19 @@ gcc -nostartfiles -fpic -shared -o gwrap.so gwrap.c -ldl
 
 Submit jobs, grun puts them in a queue, the queue is on disk so machines can lose connection any time, and jobs keep going.   Specify resouces requirements, or not - and have it figure stuff out.
 
-grun will give jobs to machines with low load.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.
+grun will give jobs to machines with low load.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.  If all the machines are busy, jobs will queue up.  Resources are locked by jobs until they are finished.   
 
-That's about all it does. 
+That's about it.
+
+NOTE: Jobs that require changing sets of resources should call grun themselves - forcing later commands to requeue:
+
+IE:
+
+> grun -m 3000 myjob.sh
+
+--- myjob.sh: ---
+perl usesalotofmemory.pl
+grun -c 4 -m 500 perl uses4cpusbutlessram.pl
 
 * What it does now:
 
@@ -47,6 +56,8 @@ It does the queueing, i/o, node-matching to requirements, and has a decent confi
 It needs a "plugin" architecture.  Should be easy with perl.
 
 It doesn't do job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.   But sqlite has locking issues with NFS, and I really like the directory-based system now.   But, I sense switching to sqlite is the right way to go.
+
+I/O could be smarter, should auto-retry on connection drops.
 
 * Goals:
 
