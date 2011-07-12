@@ -610,10 +610,6 @@ sub process_message {
 			$err="User $opts->{user} is unknown on this machine, not executing";
 		}
 
-		# redhat won't use the effective userid on "exec" but will on "system"
-		# not sure why...maybe it's the sub-fork?
-		my $needreal = $conf{node}->{kernel} =~ /\.el5/;
-
 		# expecting someone to come pick up output?
 		$io_wait{$opts->{id}}->{type} = 'stat' if $opts->{wait};	# status wait
 		$io_wait{$opts->{id}}->{type} = 'io' if $opts->{io};		# io wait
@@ -661,35 +657,29 @@ sub process_message {
 				xlog("debug", "Setting uid to $uid, gid to $gid.\n") if ($conf{trace} || $opts->{trace});
 
 				eval {	
-					$> = $uid;
-					$) = $gid if $gid;
-					if ($needreal) {
-						$< = $uid;
+					if ($gid) {
+						$) = $gid;
+						$( = $gid;
 					}
+					$> = $uid;
+					$< = $uid;
 					if ($opts->{cwd}) {
 						if (!chdir($opts->{cwd})) {
-							$err = "Can't cd to $opts->{cwd} : $!";		
+							$err = "Can't cd to $opts->{cwd} : $!";
 						}
 					}
 				};
-				$err = $@ if $@;
-				my $ret;
+
+				$err = "Error setting uid to $uid: $@\n" if !$err && $@;
 				if (!$err) {
 					exec(@cmd);
-					$err = $!;
-				}
-
-				if ($needreal) {
-					# oh well... no error code can be reported... try this
+					printf STDERR "Can't cd to $opts->{cwd} : $!\n";	
 					exit 101;
 				} else {
-					# switch to root in order to report err codes
-					$> = 0;
-					$) = 0;
-					burp($noexec, $err);
-					xlog("debug", "Exec failed: $err.\n") if ($conf{trace} || $opts->{trace});
+					printf STDERR "$err\n";	
 					exit -1;
 				}
+				# special exit code means couldn't run the command
 			}
 		}
 
