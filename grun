@@ -248,6 +248,16 @@ if ($opt{memory}) {
 	}
 }
 
+if ($conf{auto_profile}) {
+	if (-e ($conf{auto_profile})) {
+		my $cmd = join ' ', @cmd;
+		# safe'ish eval, just so there aren't weird side effects
+		my ($mem, $cpu) = evalctx(slurp($conf{auto_profile}) . ";\nreturn (\$cpu, \$mem);", cmd=>$cmd, cmd=>\@cmd);
+		$opt{memory}=$mem if ($mem > $opt{memory});
+		$opt{cpus}=$cpu if ($cpu > $opt{cpus});
+	}
+}
+
 if (!@cmd) {
 	die usage();
 }
@@ -1668,24 +1678,41 @@ sub expandnodes {
 }
 
 sub evalctx {
-	my ($expr, %ctx) = @_;
+	my ($expr, @ctx) = @_;
 	my $msafe = new Safe;
 	$msafe->permit(qw(:subprocess));        # allow backticks
-	for my $class (keys(%ctx)) {
-		%{$msafe->varglob($class)}=%{$ctx{$class}}
+	for(my $i = 0; $i < @ctx; $i+=2) {
+		my ($name, $var) = ($ctx[$i], $ctx[$i+1]);
+		# references to hashes/arrays become dereferenced hashes/arrays
+		if (ref($var) eq 'HASH') {
+			%{$msafe->varglob($name)}=%{$var};
+		} elsif (ref($var) eq 'ARRAY') {
+			@{$msafe->varglob($name)}=@{$var};
+		} else {
+			${$msafe->varglob($name)}=$var;
+		}
 	}
 	$msafe->share(qw(%conf %ENV));
 	if ($conf{trace}) {
 		xlog("debug", "Evaluating {$expr}\n");
 	}
-	my $res = $msafe->reval($expr);
+	my ($res, @res);
+	if (wantarray) {
+		@res = $msafe->reval($expr);
+	} else {
+		$res = $msafe->reval($expr);
+	}
 	my $save = $@;
 	if ($@) {
 		xlog("error", "Error evaluating {$expr} : $@\n");
 		return undef;
 	}
 	$@=$save;
-	return $res;
+	if (wantarray) {
+		return @res;
+	} else {
+		return $res;
+	}
 }
 
 sub kicknodes {
