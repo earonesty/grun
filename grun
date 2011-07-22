@@ -1059,7 +1059,7 @@ sub srvexec {
 		$conf{node}->{port} = $conf{port};
 		$conf{node}->{hostname} = $conf{hostname};
 		$conf{node}->{kernel} = `uname -rv`; chomp $conf{node}->{kernel};
-		$conf{node}->{arch} = `uname -h`; chomp $conf{node}->{arch};
+		$conf{node}->{arch} = `uname -m`; chomp $conf{node}->{arch};
 		
 		$conf{registered} = 1;
 		if (!xsend("node", $conf{node})) {

@@ -8,13 +8,13 @@ You need perl.  I tried not to use any modules that don't come with perl.  Put i
 
 Example /etc/grun.conf on the master node:
 
-service:   queue
+services:   queue
 log_file:  /var/log/grun.log
 
 Example /etc/grun.conf on a compute node:
 
 master:    foo.mydomain.local
-service:   exec
+services:   exec
 log_file:  /var/log/grun.log
 
 Example of a conf on an ssh tunneled EC2 node, with autostaging via gwrap:
