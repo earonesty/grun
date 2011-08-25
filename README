@@ -57,7 +57,11 @@ It needs a "plugin" architecture.  Should be easy with perl.
 
 It doesn't do job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.   But sqlite has locking issues with NFS, and I really like the directory-based system now.   But, I sense switching to sqlite is the right way to go.
 
-I/O could be smarter, should auto-retry on connection drops.
+I/O could be smarter.
+
+It should use wait3 if available and save stats.
+
+It should use lock resources more at the start of a job and then back off to "true usage" over time.
 
 * Goals:
 
