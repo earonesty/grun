@@ -565,6 +565,7 @@ sub process_message {
 			}
 			$nodes{$ip} = $args[0];
 			$nodes{$ip}->{ip} = $ip;
+			$nodes{$ip}->{ping} = time();
 		} else {
 			return "Error: invalid node registration info";	
 		}
