@@ -1713,7 +1713,7 @@ sub shownodes {
 # grun -q jobs
 sub showjobs {
 	my %opt;
-	
+
 	{
 		local @ARGV = @_;
 		GetOptions(\%opt, "dump", "user=s","job=i");
@@ -1735,7 +1735,7 @@ sub showjobs {
 #        $r .= sprintf "%s\t%s\t%s\t%s\t%s\n", 'JobID','User','Host','Cwd','Command';
         opendir(D,"$conf{spool}/jobs");
         while(my $jid=readdir(D)) {
-		next if $jid = /\.ip$/;
+		next if $jid =~ /\.ip$/;
                 my $f = "$conf{spool}/jobs/$jid";
                 next unless -f $f;
                 my @job=unpackcmd(slurp($f));
