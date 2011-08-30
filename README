@@ -51,17 +51,17 @@ grun -c 4 -m 500 perl uses4cpusbutlessram.pl
 
 It does the queueing, i/o, node-matching to requirements, and has a decent config system.   Trying to leverage perl a lot.  I simluated 1000 nodes and 10K jobs and it has no problem with that.  The forkless socket system is a big help. 
 
-* What it doesn't do yet:
+* What it doesn't do yet (TODO):
 
-It needs a "plugin" architecture.  Should be easy with perl.
+- needs a "plugin" architecture.  Should be easy with perl.
+- job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.   But sqlite has locking issues with NFS, and I really like the directory-based system now.   But, I sense switching to sqlite is the right way to go.
+- smarter i/o.
+- lock resources more at the start of a job and possible back off to "true usage" over time.
+- throttle ram/cpu/disk to requested (soft/hard limits)
+- halt jobs when overutilized and resume them when stuff backs off
+- graceful restart... with socket handoff to child
+- harrass users when /var is close to full, or cpu/ram requested were too high/low, or other issues
 
-It doesn't do job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.   But sqlite has locking issues with NFS, and I really like the directory-based system now.   But, I sense switching to sqlite is the right way to go.
-
-I/O could be smarter.
-
-It should use wait3 if available and save stats.
-
-It should use lock resources more at the start of a job and then back off to "true usage" over time.
 
 * Goals:
 
