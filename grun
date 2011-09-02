@@ -644,7 +644,7 @@ sub process_message {
 			if (! -e "$conf{spool}/jobs/$jid.ip") {
 				xlog("error", "Job $jid not running, but kill requested");
 				unlink "$conf{spool}/jobs/$jid";
-				return "Job $jid not running.";
+				return "Job $jid not running";
 			} else {
 				# send xabort to correct node
                                 my $ip = slurp("$conf{spool}/jobs/$jid.ip");
@@ -911,6 +911,8 @@ sub process_message {
 	} elsif ($cmd eq 'xio') {
 		my ($jid) = @args;
                 my $pid = slurp("$conf{spool}/jpids/$jid");
+		# someone has showed recent interest in this one
+		touch("$conf{spool}/jpids/$jid");
 		$io_wait{$jid}->{type} = 'io';
 		$io_wait{$jid}->{sock} = $sock;
 		$io_wait{$jid}->{time} = time();		# toss this entry if it gets old
@@ -1018,7 +1020,7 @@ sub schedule {
 
 	# no attempt here to prioritize jobs, just match and go
 	my %alloc;
-	my $cnt;
+	my $cnt=0;
 	while(my $jid=readdir(D)) {
 		my $jfil = "$conf{spool}/jobs/$jid";
 		# probably should have a folder per job to avoid this
@@ -1292,11 +1294,6 @@ sub srvexec {
 					unlink "$conf{spool}/jpids/$jid";
 				}
 				delete $io_wait{$jid};
-			} elsif (time() > ($io_wait{$jid}->{time}+$conf{io_keep})) {
-				xlog("error", "Orphaned I/O getting deleted for job $jid after $conf{io_keep} secs\n");
-				unlink "$conf{spool}/pids/$pid", "$conf{spool}/jpids/$jid", 
-					"$conf{spool}/pids/$pid.stat", "$conf{spool}/pids/$pid.out", "$conf{spool}/pids/$pid.err";
-				delete $io_wait{$jid};
 			}
 		}
 	}
@@ -1306,6 +1303,8 @@ sub srvexec {
 	if (time() > ($conf{lastpidtime}+$conf{ping_secs})) {
 		opendir(D,"$conf{spool}/pids");
 		while(my $kid = readdir(D)) {
+			next unless /^\d/;
+
 			# finished, notify submitter
 
 			if ($kid =~ /\.stat$/) {
@@ -1329,11 +1328,32 @@ sub srvexec {
 		}
 		closedir D;
 
-		# remove associated
+                opendir(D,"$conf{spool}/jpids");
+                while(my $jid = readdir(D)) {
+			next unless /^\d/;
+
+			# no xio requests, and no stats in a long time...
+			if ($conf{expire_secs} && ($conf{loop_num} > 2) && (stat("$conf{spool}/jpids/$jid"))[9] < time()-$conf{expire_secs}) {
+				# and not running
+				my $pid = slurp("$conf{spool}/jpids/$jid");
+				if (! -e "$conf{spool}/pids/$pid") {
+					xlog("error", "Expiring i/o for $jid ($pid)");
+					unlink "$conf{spool}/jpids/$jid";
+					unlink "$conf{spool}/stdio/$pid.err";
+					unlink "$conf{spool}/stdio/$pid.out";
+				}
+			}
+		}
+
+		# cleanup any leftovers
 		opendir(D,"$conf{spool}/stdio");
 		while(my $kid = readdir(D)) {
+			next unless /^(\d+)/;
+			$kid = $1;
 			if (! -e "$conf{spool}/pids/$kid.stat") {
-				unlink "$conf{spool}/stdio/$kid";
+				xlog("error", "Cleanup leftover err/out for $kid");
+				unlink "$conf{spool}/stdio/$kid.err";
+				unlink "$conf{spool}/stdio/$kid.out";
 			}
 		}
 		closedir(D);
@@ -1805,7 +1825,7 @@ EOF
 }
 
 sub showconf {
-	return Data::Dumper->new([\%conf])->Indent(1)->Terse(1)->Dump().$EOT;
+	return Data::Dumper->new([\%conf])->Sortkeys(1)->Indent(1)->Terse(1)->Dump().$EOT;
 }
 
 sub showhist {
@@ -2244,7 +2264,7 @@ sub host2ip {
 }
 
 sub packdump {
-	Data::Dumper->new(\@_)->Indent(0)->Terse(1)->Dump();
+	Data::Dumper->new(\@_)->Indent(0)->Sortkeys(1)->Terse(1)->Dump();
 }
 
 sub kill_job {
@@ -2256,7 +2276,7 @@ sub kill_job {
                 # this is WRONG ... messages should all have trace bits... that would be nice
                 sendcmd($ip, $port, 'trace', 1) if ($conf{trace});
                 ($err) = waitmsg($ip, $port, 'xabort', $killjob, $sig);
-		if ($err =~ /Not Found/i) {
+		if ($err =~ /(Not Found)|(Inappropriate ioctl for device)/i) {
         		waitmsg($conf{master}, $conf{master_port}, 'jkill', $killjob, $ip);
 		}
                 sendcmd($ip, $port, 'trace', 0) if ($conf{trace});

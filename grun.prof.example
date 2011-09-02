@@ -1,0 +1,16 @@
+# GRUN AUTO-PROFILER
+#
+# README:
+#
+# This is a PERL script that operates on the $cmd variable to auto-set the $mem and $cpu variables
+#
+# The resulting $cpu and $mem variables are then used to increase the memory and cpu requests for
+# submitted jobs
+#
+# You can use any variable names you want... and simply return an array with 2 members ($cpu, $mem);
+#
+# This allows users to run jobs more naturally.
+#
+# EXAMPLE:
+#       $cpu = 2 if $cmd =~ /\balchemy\b/
+#       $mem = 3000 if $cmd =~ /\tophat\b/ && -s $cmd[4] > 100000;
