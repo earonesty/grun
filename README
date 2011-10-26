@@ -33,7 +33,7 @@ gcc -nostartfiles -fpic -shared -o gwrap.so gwrap.c -ldl
 
 Submit jobs, grun puts them in a queue, the queue is on disk so machines can lose connection any time, and jobs keep going.   Specify resouces requirements, or not - and have it figure stuff out.
 
-grun will give jobs to machines with low load.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.  If all the machines are busy, jobs will queue up.  Resources are locked by jobs until they are finished.   
+grun will assign jobs randomly, and will tend to fill up one machine at a time.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.  If all the machines are busy, jobs will queue up.  Resources are soft-locked by jobs until they are finished, and if a non-grun job is using a machine, it's accounted for.   
 
 That's about it.
 
@@ -54,7 +54,7 @@ It does the queueing, i/o, node-matching to requirements, and has a decent confi
 * What it doesn't do yet (TODO):
 
 - needs a "plugin" architecture.  Should be easy with perl.
-- job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.   But sqlite has locking issues with NFS, and I really like the directory-based system now.   But, I sense switching to sqlite is the right way to go.
+- job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.
 - smarter i/o.
 - lock resources more at the start of a job and possible back off to "true usage" over time.
 - throttle ram/cpu/disk to requested (soft/hard limits)
