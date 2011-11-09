@@ -54,13 +54,13 @@ It does the queueing, i/o, node-matching to requirements, and has a decent confi
 * What it doesn't do yet (TODO):
 
 - needs a "plugin" architecture.  Should be easy with perl.
-- job prioritization.   To keep 100k jobs sorted by rank on disk, I'd use sqlite.
-- smarter i/o.
+- job prioritization.   To keep 100k jobs sorted by rank on disk, i'd use sqlite.
+- smarter: both streaming & windowed-recoverable (N mb backtrack) i/o.
 - lock resources more at the start of a job and possible back off to "true usage" over time.
-- throttle ram/cpu/disk to requested (soft/hard limits)
+- throttle ram/cpu/disk to requested (soft/hard limits - easy)
 - halt jobs when overutilized and resume them when stuff backs off
 - graceful restart... with socket handoff to child
-- harrass users when /var is close to full, or cpu/ram requested were too high/low, or other issues
+- harrass users when /var is close to full, or cpu/ram requested were too high/low, or other (configurable) issues
 
 
 * Goals:

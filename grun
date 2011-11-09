@@ -1552,13 +1552,12 @@ sub srvexec {
 			# finished, notify submitter
 
 			if ($kid =~ /\.stat$/) {
+				# try again
 				if (fmodtime("$conf{spool}/pids/$kid") < (time()-$conf{ping_secs})) {
 					notifystat($kid);
 				}
-				next;
-			}
-			# running, check status
-			if ($kid =~ /^\d+$/ ) {
+			} elsif ($kid =~ /^\d+$/ ) {
+				# running, check status
 				my ($ret, $status, @rd) = waitusage($kid, WNOHANG);
 				$status = undef if !$ret;
 				my $alive = kill(0, $kid);
