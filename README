@@ -49,7 +49,7 @@ grun -c 4 -m 500 perl uses4cpusbutlessram.pl
 
 * What it does now:
 
-It does the queueing, i/o, node-matching to requirements, and has a decent config system.   Trying to leverage perl a lot.  I simluated 1000 nodes and 10K jobs and it has no problem with that.  The forkless socket system is a big help. 
+It does the queueing, i/o, node-matching to requirements, and has a decent config system.   Trying to leverage perl a lot.  I simluated 1000 nodes and 10K jobs and it has no problem with that.  The forkless socket system is a big help.   It times every command and records memory/cpu/io.
 
 * What it doesn't do yet (TODO):
 
