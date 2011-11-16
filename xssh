@@ -261,7 +261,7 @@ You can specify nodes as single digits, whole hostnames, or
 
 Config file example:
 
-rewrite: (\d)       to: my-node-$1
+rewrite: (\d)       to: my-node-\$1
 nodes: 0 1 2 3 4 my-head-node
 EOF
 }
