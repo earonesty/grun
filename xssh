@@ -25,7 +25,9 @@ use strict;
 use Getopt::Long qw(:config pass_through);
 $Getopt::Long::order = $REQUIRE_ORDER;
 use IO::File;
-use Cwd qw(cwd abs_path);
+use Cwd qw(cwd);
+use File::Spec;
+
 use Data::Dumper;
 
 sub usage;
@@ -70,13 +72,13 @@ my $host = $windows ? $ENV{COMPUTERNAME} : $ENV{HOSTNAME};
 
 # on windows, plink is the ssh equivalent TODO: config this
 my $ssh = $windows?'plink':'ssh';
-my $sshopts = '-o ForwardX11=no -o ForwardX11Trusted=no -o SendEnv=PATH -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no';
+my $sshopts = '-o ForwardX11=no -o ForwardX11Trusted=no -o ConnectTimeout=30 -o SendEnv="PATH LANG" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no';
 
 # launch kids on the nodes
 
 if ($opt{mode} eq 'diff') {
 	for (@ARGV) {
-                my $f = abs_path($_);
+                my $f = File::Spec->rel2abs($_);
                 if (! -s $f) {
                         warn "file not found: $f";
                         next;
@@ -115,7 +117,7 @@ if ($opt{mode} eq 'diff') {
 
 if ($opt{mode} eq 'sync') {
 	for (@ARGV) {
-		my $f = abs_path($_);	
+		my $f = File::Spec->rel2abs($_);
 		if (! -s $f) {
 			warn "file not found: $f";
 			next;
@@ -149,7 +151,7 @@ if ($opt{mode} eq 'sync') {
 			my $opt;
 			next if $ENV{HOSTNAME} =~ /^$node\./;
 			if ($nosync{$node}) {
-				print "Skipping $node because of config.\n";
+				print "Skipping $node:$f because of config.\n";
 				next;
 			}
 
@@ -240,7 +242,7 @@ You can specify nodes as single digits, whole hostnames, or
 Rewriting occurs accoring to the rules in the xssh.conf.
 
 Config example:
-   rewrite: (\d)       to: my-node-$1
+   rewrite: (\\d)       to: my-node-$1
    nodes: 0 1 2 3 4 my-head-node
 EOF
 }
