@@ -383,13 +383,16 @@ if ($conf{auto_profile}) {
 	}
 }
 
+# convert memory to kB
 if ($opt{memory}) {
-	if ($opt{memory} !~ /kb?$/) {
-		# default memory unit is assumed to be in MB
+	if ($opt{memory} =~ /kb?$/i) {
+		# internal memory unit is kB
+	} elsif ($opt{memory} =~ /gb?$/i) {
+		# convert gB to kB
+		$opt{memory} *= 1000000;
+	} else {
+		# convert mB to kB
 		$opt{memory} *= 1000;
-		if ($opt{memory} =~ /gb?$/) {
-			$opt{memory} *= 1000;
-		}
 	}
 }
 
@@ -422,7 +425,7 @@ $opt{umask} = umask();
 $opt{env}->{USER} = $opt{user};
 
 if ($verbose) {
-	printf STDERR "Memory:	%d\n", $opt{memory} ? $opt{memory} : $DEFAULT_MEM/1000;
+	printf STDERR "Memory:	%d\n", $opt{memory} ? $opt{memory}/1000 : $DEFAULT_MEM/1000;
 	printf STDERR "CPUs:	%d\n", $opt{cpus} ? $opt{cpus} : 1;
 }
 
@@ -556,7 +559,7 @@ if ($opt{wait}) {
 	exit($stat);
 } else {
 	# aah... nicer
-	print STDOUT "Job id $info{jid}\n";
+	print STDOUT "Job id $info{jid} \n";
 }
 
 END {
@@ -1994,12 +1997,16 @@ sub unpackcmd {
 sub _sendcmd {
 	my ($host, $port, @cmd) = @_;
 	my $xcmd = packcmd(@cmd);
-        my $sock = IO::Socket::INET->new(Proto=>"tcp",PeerPort=>$port,PeerAddr=>$host, Timeout=>5);
-        if (!$sock) {
-                xlog("error",$@="Can't connect to $host:$port", Carp::longmess());
+	my $sock = IO::Socket::INET->new(Proto=>"tcp",PeerPort=>$port,PeerAddr=>$host, Timeout=>5);
+	if (!$sock) {
+		sleep(1);
+		$sock = IO::Socket::INET->new(Proto=>"tcp",PeerPort=>$port,PeerAddr=>$host, Timeout=>5);
+	}
+	if (!$sock) {
+		xlog("error",$@="Can't connect to $host:$port", Carp::longmess());
 		return undef;
-        }
-        if ($sock->send($xcmd)) {
+	}
+	if ($sock->send($xcmd)) {
 		return $sock;
 	}
 }
@@ -2352,17 +2359,17 @@ sub showjobs {
 				s/^\s+//g;
 				s/\n\s*/;/g;
 			}
-                        $job->{jid} = $jid;
-                        $job->{stat} = $stat;
-                        $job->{cpus} = 1 if ! $job->{cpus};
-                        $job->{memory} = $DEFAULT_MEM/1000 if ! $job->{memory};
-                        $job->{cmd} = join(' ', @cmd);
-                        if ($opt{long}) {
-                                $opt{fmt} = '----------\n';
-                                for(sort(keys(%$job))) {
-                                        $opt{fmt} .= "$_=" . $job->{$_} . '\n';
-                                }
-                        }
+			$job->{jid} = $jid;
+			$job->{stat} = $stat;
+			$job->{cpus} = 1 if ! $job->{cpus};
+			$job->{memory} = $DEFAULT_MEM/1000 if ! $job->{memory};
+			$job->{cmd} = join(' ', @cmd);
+			if ($opt{long}) {
+					$opt{fmt} = '----------\n';
+					for(sort(keys(%$job))) {
+							$opt{fmt} .= "$_=" . $job->{$_} . '\n';
+					}
+			}
 			if ($opt{dump}) {
 				$r .= packdump($job) . "\n";
 			} else {
