@@ -1,0 +1,94 @@
+#!/usr/bin/perl
+
+# qsub -pe smp ${NPROC} -S /bin/bash -V -q secondary -N ${JOB_ID} -o ${STDOUT_FILE} -e ${STDERR_FILE} ${EXTRAS} ${CMD}
+
+use Getopt::Long qw(:config no_ignore_case);
+use Data::Dumper;
+
+
+open LOG, ">>/opt/log/qsub.log";
+print LOG scalar(localtime), "\t", join " ", @ARGV, "\n";
+close LOG;
+
+my $nproc;
+# get rid of weird 2-argument -pe option
+for (my $i=0;$i<@ARGV;++$i) {
+    $_=$ARGV[$i];
+    if (/-pe/) {
+        $opt{pe} = $ARGV[$i+1];
+        $nproc = $ARGV[$i+2];
+        splice @ARGV, $i, 3;
+        break;
+    }
+}
+
+GetOptions(\%opt, "A=s", "S=s", "V", "p=s", "q=s", "N=s", "o=s", "e=s", "I", "j=s", "l=s@", "memory|m=s", "M=s", "v=s@", "sync=s", "cwd") || die;
+$nproc = 1 if !$opt{nproc};
+
+die "qsub: some weird option not supported: $ARGV[0]\n" if $ARGV[0] =~ /^-/;
+die "qsub: bad args for -pe\n" unless $nproc > 0;
+die "qsub: no command specified\n" unless @ARGV;
+
+for (@ARGV) {
+	if (/\'/) {
+			s/'/"'"/g;
+	} else {
+		if (/\"/) {
+			if (/\'/) {
+				s/'/"'"/g;
+			}
+			$_="'".$_."'";
+		}
+	}
+}
+
+my $cmd = join " ", @ARGV;
+
+if ($opt{o}) {
+	$cmd = "$cmd > $opt{o}"
+} else {
+	die "qsub: need output file\n";
+}
+
+
+if ($opt{N}) {
+	@opj = ("-j", "qsub$opt{N}");
+    $opt{e} = "STDIN.e$opt{N}" if !$opt{e};
+}
+
+# what does qsub do when no jobid is specified?
+$opt{e} = "STDIN.e" if !$opt{e};
+$cmd = "$cmd 2> $opt{e}";
+
+my $grun_out;
+open OLDOUT, ">&STDOUT";
+open OLDERR, ">&STDERR";
+open STDERR, ">&STDOUT";
+open STDOUT, ">/opt/tmp/qsub.$$.out" or die "Can't open STDOUT: $!"; 
+
+if(!$opt{sync}) {
+	push @opj, "-nowait";
+}
+
+my $ret = system("grun", "-v", "-c", $nproc, "-m", $opt{memory}, @opj, $cmd);
+open STDOUT, ">&OLDOUT";
+open STDERR, ">&OLDERR";
+
+my %grun;
+open IN, "/opt/tmp/qsub.$$.out";
+while(<IN>) {
+	my ($k, $v) = m/([^:]+):?\s*(.*)/;
+	$k =~ s/ /_/g;
+	$grun{lc($k)}=$v;;
+}
+close IN;
+unlink "/opt/tmp/qsub.$$.out";
+
+if ($ret == 0) {
+	print "Your job $grun{job_id} \(\"$cmd\"\) has been submitted\n";
+}
+
+if ($opt{sync} && ! -s $opt{e}) {
+    unlink($opt{e});
+}
+
