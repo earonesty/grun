@@ -1075,7 +1075,8 @@ sub process_message {
 					next if ref($opts->{$_});
 					$ENV{"_GRUN_OPT_$_"} = $opts->{$_};
 				}
-				$ENV{"_GRUN"} = 1;
+				$ENV{"_GRUN"} = $opts->{id};
+				$ENV{"SGE_TASK_ID"} = $opts->{id};
 				my $err;
 				my $ret;
 
