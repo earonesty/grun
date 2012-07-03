@@ -223,7 +223,7 @@ if ($editjob) {
 		$_=$ARGV[0];
 		for (split /,/, $_) {
 			my ($key, $val) = $_ =~ /^([^=]+)(?:=(.*))?$/;
-			my $nk = bestunique($key, qw(hold resume memory cpus state), @metrics, @labels);
+			my $nk = bestunique($key, qw(hold resume memory cpus state hosts), @metrics, @labels);
 			$key = $nk if $nk;
 			$key = 'state', $val = 'hold' if ($key eq 'hold');
 			$key = 'state', $val = 'resume' if ($key eq 'resume');
@@ -1339,7 +1339,7 @@ sub schedule {
 
 	# no attempt here to prioritize jobs, just match and go
 	my $cnt=0;
-        for my $jid (@D) {
+    for my $jid (@D) {
 		my $jfil = "$conf{spool}/jobs/$jid";
 		# probably should have a folder per job to avoid this
 		next if ($jfil =~ /\.ip$/);
