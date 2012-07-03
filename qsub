@@ -98,6 +98,7 @@ if ($opt{t}) {
     $ENV{SGE_TASK_FIRST} = $l;
     $ENV{SGE_TASK_LAST} = $h;
     my @jobl;
+    # never wait for each on
     push @opj, "-nowait";
     for (my $i = $l; $i<= $h; ++$i) {
         $ENV{SGE_TASK_ID} = $i;
