@@ -5,7 +5,7 @@
 use strict;
 use Getopt::Long qw(:config no_ignore_case);
 use Data::Dumper;
-use Cwd qw(cwd);
+use Cwd qw(getcwd cwd);
 
 open LOG, ">>/opt/log/qsub.log";
 print LOG scalar(localtime), "\t", cwd(), "\t", join " ", @ARGV, "\n";
@@ -58,7 +58,11 @@ for (@ARGV) {
 my $cmd = join " ", @ARGV;
 
 if ($opt{o}) {
-	$cmd = "$cmd > $opt{o}"
+	if (-d $opt{o}) {
+		$cmd = "$cmd > $opt{o}/$$.log";
+	} else {
+		$cmd = "$cmd > $opt{o}"
+	}
 } else {
 	die "qsub: need output file (-o)\n";
 }
@@ -82,8 +86,8 @@ $cmd = "$cmd 2> $opt{e}";
 $opt{memory} = 1000 * $nproc; 
 
 if ($opt{hold_jid}) {
-    my $running = `/opt/bin/grun -q jo -f '%jid\t%jobx' | grep '$opt{hold_jid}\$'`;
-	print "/opt/bin/grun -q jo -f '%jid\t%jobx' | grep '$opt{hold_jid}\$'\n";
+    $opt{hold_jid} =~ s/\*/\.\*/g;
+    my $running = `/opt/bin/grun -q jo -f '%jid\t%cwd\t%jobx\n' | grep '$opt{hold_jid}\$' | grep $wd`;
 	$running =~ s/\s+//g;
     while ($running) {
         sleep(30);
@@ -156,10 +160,14 @@ sub dojob {
         $tmpf = "/opt/tmp/qsub.$$.$taskid.out";
         $ext = " [$taskid]";
     }
+
+    warn(join(" ", "+", "grun", "-v", "-c", $nproc, "-m", $opt{memory}, @opj, $cmd), "\n");
+
     open OLDOUT, ">&STDOUT";
     open OLDERR, ">&STDERR";
     open STDOUT, ">$tmpf" or die "Can't open STDOUT: $!";
     open STDERR, ">&STDOUT";
+
     my $ret = system("grun", "-v", "-c", $nproc, "-m", $opt{memory}, @opj, $cmd);
     open STDOUT, ">&OLDOUT";
     open STDERR, ">&OLDERR";
