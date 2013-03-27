@@ -339,8 +339,8 @@ if ($make) {
 		my @t = m/([<>])\s*(\S+)/g;
 		if (@t) {
                         for (my $i=0;$i<@t;++$i) {
-                                push @i, $t[$i+1] if $t[$i] eq '<';
-                                push @o, $t[$i+1] if $t[$i] eq '>';
+                                push @i, $t[$i+1] if $t[$i] eq '<' && $t[$i]=~/^\w/;
+                                push @o, $t[$i+1] if $t[$i] eq '>' && $t[$i]=~/^\w/;
                         }
 		}
 	}
@@ -351,6 +351,7 @@ if ($make) {
 	for my $i (@i) {
 		for my $o (@o) {
 			if (! (-s $o) || (fmodtime($i) > fmodtime($o))) {
+	            warn "# need $o\n" if $opt{noexec} || $verbose;
 				$need=1;
 			}
 		}
