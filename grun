@@ -338,10 +338,10 @@ if ($make) {
 		}
 		my @t = m/([<>])\s*(\S+)/g;
 		if (@t) {
-                        for (my $i=0;$i<@t;++$i) {
-                                push @i, $t[$i+1] if $t[$i] eq '<' && $t[$i]=~/^\w/;
-                                push @o, $t[$i+1] if $t[$i] eq '>' && $t[$i]=~/^\w/;
-                        }
+            for (my $i=0;$i<@t;$i+=2) {
+                push @i, $t[$i+1] if $t[$i] eq '<' && $t[$i+1]=~/^\s*\w/;
+                push @o, $t[$i+1] if $t[$i] eq '>' && $t[$i+1]=~/^\s*\w/;
+            }
 		}
 	}
 	die "Unable to determine i/o for -M (make) semantics\n\n" . usage()
