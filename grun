@@ -685,6 +685,16 @@ sub readsocks {
 		$ret = 1;
 	}
 
+    foreach my $sock (@$new_error) {
+        if ($sock == $listener) {
+			xlog("error", "Listener failure, quitting... maybe restart or something here.");
+			exit(99)
+		} else {
+			xlog("debug", "Closing $sock after error\n");
+			close_sock($sock);
+		}
+	}
+
 	foreach my $sock ($write_set->can_write(0)) {
 		if (!*$sock{HASH}->{resp} && *$sock{HASH}->{file}) {
 			if (*$sock{HASH}->{io}) {
@@ -893,7 +903,11 @@ sub process_message {
 						xlog("error", "Job $jid force kill requested for ip $ip");
 						return "Job $jid ip mismatch, force failed\n";
 					} else {
-						return "Forward $ip:" . $nodes{$ip}->{port};
+						if ($nodes{$ip}) {
+							return "Forward $ip:" . $nodes{$ip}->{port};
+						} else {
+							return "Job $jid, node $ip not online, can't kill\n";
+						}
 					}
 				}
 			}
@@ -1235,7 +1249,11 @@ sub process_message {
 					xlog("error", "No ip for job $jid");
 				}
 # route to correct node
-				return (jid=>$jid, ip=>$ip, port=>$nodes{$ip}->{port}, hostname=>$nodes{$ip}->{hostname});
+				if (!$nodes{$ip}) {
+					xlog("error", "Job $jid is linked to $ip which is not responding");
+				} else {
+					return (jid=>$jid, ip=>$ip, port=>$nodes{$ip}->{port}, hostname=>$nodes{$ip}->{hostname});
+				}
 			}
 		} else {
             # wait for job start
@@ -1394,7 +1412,7 @@ sub schedule {
 
 			#xlog("debug", "Sched $n->{ip}: j:$job->{cpus}?$n->{avail}>c:$cpus , j:$job->{memory}?$n->{mem}>m:$mem");
 
-			if ($n->{ping} > (time()-$conf{ping_secs}*3)) {
+			if ($n->{ping} > (time()-$conf{ping_secs}*6)) {
 				my $ok = 1;
 				for (@metrics) {
 					if (($n->{"param-$_"} - $n->{"a_$_"}) < $job->{param}->{$_}) {
@@ -2343,7 +2361,7 @@ sub showhist {
 			$cmd =~ s/^\s+//;
 			$cmd =~ s/\s+$//;
 			$cmd =~ s/\n/;/g;
-			if ($nodes{$job{host}}->{hostname}) {
+			if ($nodes{$job{host}} && $nodes{$job{host}}->{hostname}) {
 				$job{host}=$nodes{$job{host}}->{hostname} 
 			} elsif (-e (my $n="$conf{spool}/nodes/$job{host}.reg")) {
 				my @node=unpackcmd(slurp($n), 0);
