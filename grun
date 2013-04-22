@@ -643,6 +643,9 @@ sub readsocks {
 					fcntl($new_sock, F_SETFL, O_NONBLOCK);
                     setsockopt($new_sock,SOL_SOCKET, SO_LINGER,pack("II",1,120));
                     setsockopt($sock, SOL_SOCKET, SO_KEEPALIVE, 1);
+                    setsockopt($sock, IPPROTO_TCP, TCP_KEEPIDLE,  30);
+                    setsockopt($sock, IPPROTO_TCP, TCP_KEEPINTVL,  10);
+                    setsockopt($sock, IPPROTO_TCP, TCP_KEEPCNT,    10);
 				}
 				$read_set->add($new_sock);
 				*$new_sock{HASH}->{time} = time();
