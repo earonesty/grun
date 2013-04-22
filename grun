@@ -636,10 +636,13 @@ sub readsocks {
 		if ($sock == $listener) {
 			my $new_sock = $sock->accept();
 			if ($new_sock) {
+                $new_sock->timeout(5);
 				if ($WIN32) {
 					ioctl($new_sock, 0x8004667e, pack("I", 1));
 				} else {
 					fcntl($new_sock, F_SETFL, O_NONBLOCK);
+                    setsockopt($new_sock,SOL_SOCKET, SO_LINGER,pack("II",1,120));
+                    setsockopt($sock, SOL_SOCKET, SO_KEEPALIVE, 1);
 				}
 				$read_set->add($new_sock);
 				*$new_sock{HASH}->{time} = time();
@@ -2121,6 +2124,8 @@ sub _sendcmd {
 		xlog("error",$@="Can't connect to $host:$port", Carp::longmess());
 		return undef;
 	}
+    setsockopt($sock,SOL_SOCKET, SO_LINGER,pack("II",1,120));
+    setsockopt($sock, SOL_SOCKET, SO_KEEPALIVE, 1);
 	if ($sock->send($xcmd)) {
 		return $sock;
 	}
@@ -2744,7 +2749,7 @@ sub startdaemon {
 		$SIG{TERM} = $SIG{INT};
 		$SIG{HUP}  = \&init;
 
-		$listener = IO::Socket::INET->new(Proto=>"tcp",LocalPort=>$conf{port}, LocalAddr=>$conf{bind}, Reuse=>1, Timeout=>1, Listen=>100)
+		$listener = IO::Socket::INET->new(Proto=>"tcp",LocalPort=>$conf{port}, LocalAddr=>$conf{bind}, Reuse=>1, Timeout=>2, Listen=>100)
 		  or die "Can't make TCP server on port $conf{port}: $@";
 		$read_set = new IO::Select();
 		$write_set = new IO::Select();
@@ -2779,6 +2784,7 @@ sub killgpid {
 	if (!kill(2, $gpid)) {
 		die "Can't kill -INT $gpid: $!\n";
 	}
+	sleep 1;
 	$gpid = 0;
 }
 
