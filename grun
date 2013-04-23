@@ -299,7 +299,7 @@ while ($ARGV[0] =~ /^--([\w-]+)=([\w=]+)/) {
 	shift @ARGV;
 }
 
-if ($make) {
+if ($make || $verbose) {
 	GetOptions(\%opt, "noexec");
 }
 
@@ -390,12 +390,14 @@ if ($conf{auto_profile}) {
 
 		$prof = $cpu if ref($cpu) eq 'HASH';
 
+die Dumper $prof;
 		if ($prof && ref($prof) eq 'HASH') {
 			$prof->{memory} = $mem if defined($mem) && !ref($mem) && !$prof->{memory};
 			$prof->{cpus} = $cpu if defined($cpu) && !ref($cpu) && !$prof->{cpus};
 
 			$opt{memory}=$prof->{memory} if $prof->{memory} && !$opt{memory};
 			$opt{cpus}=$prof->{cpus} if $prof->{cpus} && !$opt{cpus};
+			$opt{hosts}=$prof->{cpus} if $prof->{hosts} && !$opt{hosts};
 
 			for ((@metrics,@labels)) {
 				# as if the user entered it
@@ -474,6 +476,7 @@ if (!$opt{wait}) {
 if ($verbose) {
 	printf STDERR "Memory:	%d\n", $opt{memory} ? $opt{memory}/1000 : $DEFAULT_MEM/1000;
 	printf STDERR "CPUs:	%d\n", $opt{cpus} ? $opt{cpus} : 1;
+	printf STDERR "Hosts:	%s\n", $opt{hosts} if $opt{hosts};
 	for ((@metrics,@labels)) {
 		printf STDERR proper($_) . ":	%s\n", $opt{param}->{$_} ? $opt{param}->{$_} : 1;
 	}
