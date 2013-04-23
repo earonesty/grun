@@ -390,7 +390,6 @@ if ($conf{auto_profile}) {
 
 		$prof = $cpu if ref($cpu) eq 'HASH';
 
-die Dumper $prof;
 		if ($prof && ref($prof) eq 'HASH') {
 			$prof->{memory} = $mem if defined($mem) && !ref($mem) && !$prof->{memory};
 			$prof->{cpus} = $cpu if defined($cpu) && !ref($cpu) && !$prof->{cpus};
