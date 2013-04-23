@@ -648,8 +648,13 @@ sub readsocks {
                     setsockopt($sock, IPPROTO_TCP, TCP_KEEPINTVL,  10);
                     setsockopt($sock, IPPROTO_TCP, TCP_KEEPCNT,    10);
 				}
-				$read_set->add($new_sock);
-				*$new_sock{HASH}->{time} = time();
+				if (!$sock->peerhost()) {
+					xlog("debug", "Closing $sock because no peerhost\n");
+					close_sock($sock);
+				} else {
+					$read_set->add($new_sock);
+					*$new_sock{HASH}->{time} = time();
+				}
 			}
 		} else {
 			my $buf;
@@ -693,13 +698,23 @@ sub readsocks {
 	}
 
     foreach my $sock (@$new_error) {
+		# handle exceptions, if any
         if ($sock == $listener) {
 			xlog("error", "Listener failure, quitting... maybe restart or something here.");
 			exit(99)
 		} else {
-			xlog("debug", "Closing $sock after error\n");
+			xlog("debug", "Closing read $sock after error\n");
 			close_sock($sock);
 		}
+	}
+
+	foreach my $sock ($write_set->has_exception(0)) {
+		# clean up write error scokets
+		xlog("debug", "Closing write $sock after error\n");
+		if (*$sock{HASH}->{io}) {
+			close *$sock{HASH}->{io};
+		}
+		close_sock($sock);
 	}
 
 	foreach my $sock ($write_set->can_write(0)) {
@@ -841,6 +856,7 @@ sub process_message {
 			my $ip = $sock->peerhost();	# store info in a file, for fun
 			if (!$ip) {
 				xlog("error", "Socket has no ip: $! ($data)");
+				close_sock($sock);
 			} else {
                 my $file = "$conf{spool}/nodes/$ip.reg";
                 open(F, ">$file") || return("Error: can't create $file : $!");
@@ -1292,6 +1308,9 @@ sub process_message {
 
 # stick the host the job came from and the start time in there.
 			my $ip = $sock->peerhost();
+			if (!$ip) {
+				return('error'=>"No ip, not creating $file : $!");
+			}
 			substr($data,0,2) = "[{time=>" . $time . "," . "from=>'" . $ip . "',";
 
 			open(F, ">$file") || return('error'=>"Can't create $file : $!");
