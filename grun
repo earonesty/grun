@@ -118,7 +118,7 @@ if ($qinfo) {
 
 	my @arg = @ARGV;
 	$cmd =~ s/^-//;
-	my $tmp = substr bestunique($cmd, qw(config status jobs file history)), 0, 4;
+	my $tmp = substr bestunique($cmd, qw(config status jobs file history trace)), 0, 4;
 	if (!$tmp) {
 		die "Command $cmd is not available, for help type grun -query -?\n";
 	}
@@ -128,6 +128,7 @@ if ($qinfo) {
 
 	my @dest = $opt{hosts} ? expandnodes($opt{hosts}) : 
 		$cmd eq 'conf' ? [$conf{bind}, $conf{port}] : 
+		$cmd eq 'trac' ? [$conf{bind}, $conf{port}] : 
 		[$conf{master},$conf{master_port}];
 
 	if ($cmd eq 'file' && @dest > 1) {
@@ -156,11 +157,16 @@ if ($qinfo) {
 			sendcmd($host, $port, 'trace', 0) if ($conf{trace});
 		} elsif ((!samehost($host,`hostname`) || (!$ENV{_GRUN} && (!$conf{services}->{queue} || $cmd =~ /^conf|stat$/)))) {
 # this could get ugly, if called a lot, may want to make more efficient
-			sendcmd($host, $port, 'trace', 1) if ($conf{trace});
-            warn ("waitmsg($host, $port, 'xcmd', $cmd, @arg, %opt)\n") if $opt{debug};
-			my ($res) = waitmsg($host, $port, "xcmd", $cmd, @arg, %opt);
-			print $res;
-			sendcmd($host, $port, 'trace', 0) if ($conf{trace});
+            if (!( $cmd eq 'trac')) {
+			    sendcmd($host, $port, 'trace', 1) if ($conf{trace});
+                warn ("waitmsg($host, $port, 'xcmd', $cmd, @arg, " . packref(\%opt) . ")\n") if $opt{debug};
+                my ($res) = waitmsg($host, $port, "xcmd", $cmd, @arg, %opt);
+                print $res;
+			    sendcmd($host, $port, 'trace', 0) if ($conf{trace});
+            } else {
+                warn ("# turning trace on ($host, $port)\n");
+			    sendcmd($host, $port, 'trace', 1);
+            }
 		} else {
             warn ("using local queue status, host $host is $conf{bind}/$conf{hostip} ENV is " . `hostname` . "\n") if $opt{debug};
 			if ($cmd eq 'stat') {
@@ -389,7 +395,7 @@ if ($conf{auto_profile}) {
 		my ($cpu, $mem, $prof) = evalctx(slurp($conf{auto_profile}) . ";\nreturn (\$cpu, \$mem, \%prof);", cmd=>$cmd, cmd=>\@cmd);
 
 		$prof = $cpu if ref($cpu) eq 'HASH';
-
+        $prof->{cpus}=$prof->{cpu} if !$prof->{cpus} && $prof->{cpu};
 		if ($prof && ref($prof) eq 'HASH') {
 			$prof->{memory} = $mem if defined($mem) && !ref($mem) && !$prof->{memory};
 			$prof->{cpus} = $cpu if defined($cpu) && !ref($cpu) && !$prof->{cpus};
@@ -560,14 +566,16 @@ if ($opt{wait}) {
 	}
 
 	while (!defined($info{ip})) {
-		%info = waitmsg($conf{master}, $conf{master_port}, 'jinfo', $info{jid});
-		if ($info{error}) {
-			print STDERR $info{error}, "\n";
+		my %tmp = waitmsg($conf{master}, $conf{master_port}, 'jinfo', $info{jid});
+		if ($tmp{error}) {
+			print STDERR $tmp{error}, "\n";
 			exit -1;
 		}
-		if (!defined($info{ip})) {
+		if (!defined($tmp{ip})) {
 			sleep(5);
-		}
+		} else {
+            %info = %tmp;
+        }
 	}
 
 	my $host = $info{hostname} ? $info{hostname} : $info{ip};           # support old ver which didn't have hostname
@@ -590,9 +598,22 @@ if ($opt{wait}) {
 			if ($stat == 65280 && !$err) {
 				print STDERR "Error: [$host] Command returned -1\n";
 			} 
+			if ($stat == -102) {
+                # i don't know about it ... maybe it's in the history?
+                my ($hstat) = waitmsg($conf{master}, $conf{master_port}, 'jhist2', $info{jid});
+                if ($hstat != -102) {
+                    # ok that sucked
+					xlog("debug", "Had to use jhist2...why? ($info{jid})\n");
+                    $stat=$hstat;
+                }
+            }
 		}
 		sleep 5 if (!defined $stat && !defined $err);
 	}
+
+    if ($stat == -102) {
+        
+    }
 
 	# send this command into the ether...if exec doesn't get it, clean up after timeout
 	if ($opt{io}||$opt{wait}) {
@@ -645,14 +666,14 @@ sub readsocks {
 				} else {
 					fcntl($new_sock, F_SETFL, O_NONBLOCK);
                     setsockopt($new_sock,SOL_SOCKET, SO_LINGER,pack("II",1,120));
-                    setsockopt($sock, SOL_SOCKET, SO_KEEPALIVE, 1);
-                    setsockopt($sock, IPPROTO_TCP, TCP_KEEPIDLE,  30);
-                    setsockopt($sock, IPPROTO_TCP, TCP_KEEPINTVL,  10);
-                    setsockopt($sock, IPPROTO_TCP, TCP_KEEPCNT,    10);
+                    setsockopt($new_sock, SOL_SOCKET, SO_KEEPALIVE, 1);
+                    setsockopt($new_sock, IPPROTO_TCP, TCP_KEEPIDLE,  60);
+                    setsockopt($new_sock, IPPROTO_TCP, TCP_KEEPINTVL,  20);
+                    setsockopt($new_sock, IPPROTO_TCP, TCP_KEEPCNT,    10);
 				}
-				if (!$sock->peerhost()) {
-					xlog("debug", "Closing $sock because no peerhost\n");
-					close_sock($sock);
+				if (!$new_sock->peerhost()) {
+					xlog("debug", "Closing $new_sock because no peerhost\n");
+					close_sock($new_sock);
 				} else {
 					$read_set->add($new_sock);
 					*$new_sock{HASH}->{time} = time();
@@ -895,7 +916,7 @@ sub process_message {
 #                                return "Forward $ip:" . $nodes{$ip}->{port};
 			}
 		} else {
-			my $ref = $safe->reval(slurp("$conf{spool}/jobs/$jid"));
+			my $ref = eval(slurp("$conf{spool}/jobs/$jid"));
 			for my $key (keys(%ed)) {
 				$ref->[0]->{$key} = $ed{$key};
 			}
@@ -1245,8 +1266,19 @@ sub process_message {
 		} else {
 #		print "IOWAIT: " . Dumper \%io_wait;
 			xlog("error", "Wait xio for job ($jid) which isn't running anymore, and there's no data for it.");
-			return ($SOCK_RAW=>"name:fake.err\nlen:14\n\nJob $jid not found during xio\nname:fake.out\nlen:0\n\nname:fake.stat\nlen:4\n\n-102");
+            my $msg = "Job $jid not found during xio\n";
+            my $len = length($msg);
+			return ($SOCK_RAW=>"name:fake.err\nlen:$len\n\n${msg}name:fake.out\nlen:0\n\nname:fake.stat\nlen:4\n\n-102");
 		}
+	} elsif ($cmd eq 'jhist2') {
+        my ($jid) = @args;
+        my $dat = slurp(jhistpath($jid));
+        if (!$dat) { 
+            return (-102)
+        } else {
+            unpackcmd($dat, 1);
+            return($dat->{status});
+        }
 	} elsif ($cmd eq 'xstat') {
 		my ($jid) = @args;
 		my $pid = slurp("$conf{spool}/jpids/$jid");
@@ -1363,7 +1395,7 @@ sub schedule {
                 next unless ($jfil =~ /\.run$/);
 
 		next unless -f $jfil;
-		my $ref = $safe->reval(slurp($jfil));
+		my $ref = eval(slurp($jfil));
 		if (!(ref($ref) eq 'ARRAY')) {
 			xlog("error", "Invalid job file format: $jfil\n");
 			rename($jfil, "$conf{spool}/trash/$jid");
@@ -1403,7 +1435,7 @@ sub schedule {
                 next if ($jfil =~ /\.run$/);
 
 		next unless -f $jfil;
-		my $ref = $safe->reval(slurp($jfil));
+		my $ref = eval(slurp($jfil));
 		if (!(ref($ref) eq 'ARRAY')) {
 			xlog("error", "Invalid job file format: $jfil\n");
 			rename($jfil, "$conf{spool}/trash/$jid");
@@ -2128,7 +2160,7 @@ sub packref {
 }
 
 sub unpackcmd {
-	my $ref = $safe->reval($_[0]);
+	my $ref = eval($_[0]);
 	if (ref($ref) eq 'ARRAY') {
 		return @$ref;
 	} else {
@@ -2152,6 +2184,10 @@ sub _sendcmd {
 	}
     setsockopt($sock,SOL_SOCKET, SO_LINGER,pack("II",1,120));
     setsockopt($sock, SOL_SOCKET, SO_KEEPALIVE, 1);
+    setsockopt($sock, IPPROTO_TCP, TCP_KEEPIDLE,  60);
+    setsockopt($sock, IPPROTO_TCP, TCP_KEEPINTVL,  20);
+    setsockopt($sock, IPPROTO_TCP, TCP_KEEPCNT,    10);
+
 	if ($sock->send($xcmd)) {
 		return $sock;
 	}
@@ -2775,7 +2811,7 @@ sub startdaemon {
 		$SIG{TERM} = $SIG{INT};
 		$SIG{HUP}  = \&init;
 
-		$listener = IO::Socket::INET->new(Proto=>"tcp",LocalPort=>$conf{port}, LocalAddr=>$conf{bind}, Reuse=>1, Timeout=>2, Listen=>100)
+		$listener = IO::Socket::INET->new(Proto=>"tcp",LocalPort=>$conf{port}, LocalAddr=>$conf{bind}, Reuse=>1, Timeout=>2, Listen=>1000)
 		  or die "Can't make TCP server on port $conf{port}: $@";
 		$read_set = new IO::Select();
 		$write_set = new IO::Select();
