@@ -402,7 +402,7 @@ if ($conf{auto_profile}) {
 
 			$opt{memory}=$prof->{memory} if $prof->{memory} && !$opt{memory};
 			$opt{cpus}=$prof->{cpus} if $prof->{cpus} && !$opt{cpus};
-			$opt{hosts}=$prof->{cpus} if $prof->{hosts} && !$opt{hosts};
+			$opt{hosts}=$prof->{hosts} if $prof->{hosts} && !$opt{hosts};
 
 			for ((@metrics,@labels)) {
 				# as if the user entered it
@@ -1411,6 +1411,14 @@ sub schedule {
 
 		# job is running, make sure it's resources are somewhat locked
 		($jid) = $jid =~ m/^(\d+)/;
+
+		if (-s jhistpath($jid)) {
+			# job was finished, but never unlinked
+			unlink($jfil);
+			unlink("$conf{spool}/jobs/$jid.ip");
+			next;
+		}
+
 		# check to see whether job has expired
 		if (!$conf{loop_num}>2 && $conf{expire_secs} && (fmodtime($jfil) < (time()-$conf{expire_secs}))) {
 			selfcmd('jstat', pid=>-1, id=>$jid, status => -8, error=>"Orphaned job (" . (time()-fmodtime($jfil)) . "s)");
