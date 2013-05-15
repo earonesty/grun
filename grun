@@ -29,8 +29,9 @@ use Socket qw(IPPROTO_TCP TCP_NODELAY TCP_KEEPIDLE TCP_KEEPINTVL TCP_KEEPCNT);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use Safe;
 use Cwd;
+use List::Util qw(min max);
 
-our $VERSION = '0.8.151';				# 0.9 will be feature lock, after sql impl.   1.0 will be config backward lock
+our $VERSION = '0.8.312';				# 0.9 will be feature lock, after sql impl.   1.0 will be config backward lock
 
 my $WIN32 = ($^O =~ /Win32/);
 my $EOT = pack("cc",0,4);
@@ -395,7 +396,11 @@ if ($conf{auto_profile}) {
 		my ($cpu, $mem, $prof) = evalctx(slurp($conf{auto_profile}) . ";\nreturn (\$cpu, \$mem, \%prof);", cmd=>$cmd, cmd=>\@cmd);
 
 		$prof = $cpu if ref($cpu) eq 'HASH';
+
+        # alias names
         $prof->{cpus}=$prof->{cpu} if !$prof->{cpus} && $prof->{cpu};
+        $prof->{memory}=$prof->{mem} if !$prof->{memory} && $prof->{mem};
+
 		if ($prof && ref($prof) eq 'HASH') {
 			$prof->{memory} = $mem if defined($mem) && !ref($mem) && !$prof->{memory};
 			$prof->{cpus} = $cpu if defined($cpu) && !ref($cpu) && !$prof->{cpus};
@@ -1674,6 +1679,10 @@ sub srvexec {
 		# ping master with stats
 		$conf{node}->{arch} = `arch`; chomp $conf{node}->{arch};
 		($conf{node}->{tmem},$conf{node}->{mem}) = getmem();					# free mem
+        if ($conf{mem}) {
+            $conf{node}->{tmem}=min($conf{memory},$conf{node}->{tmem});
+            $conf{node}->{mem}=min($conf{memory},$conf{node}->{mem});
+        }
 		$conf{node}->{load} = slurp("/proc/loadavg");			# load
 		$conf{node}->{cpus} = $conf{cpus} ? $conf{cpus} : getcpus();	# num cores
 		$conf{node}->{bench} = $conf{bench} ? $conf{bench} : getbench();	# num cores
@@ -1957,6 +1966,12 @@ sub readconf {
 
 	# stored as an array reference
 	$conf{env} = [split(/[\s,]+/,$conf{env})] unless ref($conf{env}) eq 'ARRAY';
+
+    # make compatible with previous versions
+    if ($conf{mem}) {
+        $conf{memory} = $conf{mem};
+        delete $conf{mem};
+    }
 
 	# split up host/port
 	$conf{port} = $1 if $conf{bind} =~ s/:(\d+)$//;
