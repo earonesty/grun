@@ -1554,8 +1554,6 @@ sub schedule {
 					rename($jmine, $jfil);
 					$max_n->{avail} = 0;
 				} else {
-					$max_n->{avail} -= $job->{cpus};
-					$max_n->{memory} -= $job->{memory};
 					$max_n->{a_cpus} += $job->{cpus} + 1;
 					$max_n->{a_memory} += $job->{memory}; 
 				}
