@@ -33,6 +33,8 @@ mkdir "$tmpdir/grun-test.spool";
 
 ok(-d "$tmpdir/grun-test.spool", "grun spool");
 
+# todo... get an ephemeral port and use it
+
 my $cwd = cwd();
 
 open O, ">$CONF";

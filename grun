@@ -62,7 +62,7 @@ $def{default_memory} = 1000 * 1000;        # default job memory
 $def{ping_secs} = 30;				# how often to tell about load/mem/stats
 $def{remove_secs} = '$ping_secs * 1000';	# don't even try kickstarting if the node is this old
 $def{idle_load} = .3;				# how often to tell about load/mem/stats
-$def{retry_secs} = 60;				# how often to retry notifications
+$def{retry_secs} = 10;				# how often to retry notifications
 $def{bench_secs} = 86400;			# how often to re-benchmark
 $def{max_buf} = 1000000;			# how often to retry notifications
 $def{expire_secs} = 14400;			# remove jobs whose execution nodes haven't reported back in this amount of time
@@ -127,7 +127,6 @@ if (!$daemon) {
 	GetOptions("kill"=>\$killjob, "trace"=>\$def{trace}, "edit|e"=>\$editjob) ||
 		die usage();
 }
-
 
 if ($conf{debug_memory}) {
 	eval {require Devel::Gladiator;};
@@ -241,6 +240,7 @@ if ($killjob) {
 			$exit=-1;
 		} else {
 			my $ok = ($err =~ /^Job.*(aborted|kill requested)/);
+            $err =~ s/\n$//;
 			warn "$err\n" if $ok; 
 			$err = 'No remote response to jkill' if !$ok && !$err;
 			warn "Error: $err\n" if !$ok;
@@ -311,7 +311,7 @@ sub grun_client {
     $opt{io} = 1;				# copy io back on the socket, implies wait
 
     Getopt::Long::Configure qw(require_order no_ignore_case passthrough);
-    GetOptions(\%opt, "file=s", "int|I", "memory|m=i", "hosts|h=s", "cpus|c=i", "io!", "wait!", "err|E=s", "out|o=s", "jobx|jobid|j=s", "verbose", "make|M", "debug|D", "env|E=s", "alert=s", "param|p=s@");
+    GetOptions(\%opt, "file=s", "int|I", "memory|m=i", "hosts|h=s", "cpus|c=i", "io!", "wait!", "err|e=s", "out|o=s", "jobx|jobid|j=s", "verbose", "make|M", "debug|D", "env|E=s", "alert=s", "param|p=s@");
 
     my $verbose = $opt{verbose}; delete $opt{verbose};
     my $env = $opt{env}; delete $opt{env};
@@ -599,7 +599,7 @@ sub grun_client {
     if ($opt{wait}) {
         # wait for a job ip
         while (!defined($info{ip})) {
-            my %tmp = waitmsg_retry(10000, $conf{master}, $conf{master_port}, 'jinfo', $info{jid});
+            my %tmp = waitmsg_retry($conf{retry_secs}*1000, $conf{master}, $conf{master_port}, 'jinfo', $info{jid});
 
             if ($tmp{error}) {
                 print STDERR $tmp{error}, "\n";
@@ -911,15 +911,15 @@ sub process_message {
                     archive_job($jid, $job, $STATUS_UNKNOWN, undef, undef);
 			        return "Job $jid, unknown state";
 				} else {
-					if ($job->{force} && ($job->{force} eq $job_ip)) {
+					if ($job->{force}) {
 						xlog("error", "Job $jid forced kill");
                         my $job = unpack_file("$conf{spool}/jobs/$jid:$ip.run");
+						if ($nodes{$job_ip}) {
+                            sendcmd_nowait($job_ip, $nodes{$job_ip}->{port}, 'xabort', $jid, 9);
+                        }
                         $job->{error}="Forced kill";
                         archive_job($jid, $job, $STATUS_UNKNOWN, undef, undef);
 						return "Job $jid forced kill\n";
-					} elsif ($job->{force}) {
-						xlog("error", "Job $jid force kill requested for ip $job_ip");
-						return "Job $jid ip mismatch, force failed\n";
 					} else {
 						if ($nodes{$job_ip}) {
 							return "Forward $jid $job_ip:" . $nodes{$job_ip}->{port};
@@ -931,6 +931,7 @@ sub process_message {
 			}
 		} else {
             my $job = unpack_file("$conf{spool}/jobs/$jid");
+            $job->{error}="Killed";
             archive_job($jid, $job, $STATUS_NEVERRUN, undef, undef);
 			return "Job $jid aborted";
 		}
@@ -1167,7 +1168,8 @@ sub process_message {
 			}
 		} else {
             # wait for job start
-			$start_wait{$jid} = $zid;
+			$start_wait{$jid}->{zid} = $zid;			# set router id
+			$start_wait{$jid}->{time} = time();			# refresh timestamp
             return ();                    # wait for response
 		}
 	} elsif ($cmd eq 'run') {
@@ -1302,6 +1304,22 @@ sub schedule {
     my @D = sort {(.5-rand()) cmp (.5-rand())} readdir(D);
     closedir(D);
 
+    if (($conf{loop_num}%100)==5) {
+        # ocassionally check for expiration of start_waits, though it should never happen
+        for my $jid (keys(%start_wait)) {
+            if ($conf{expire_secs} && (time() > $start_wait{$jid}->{time}+$conf{expire_secs})) {
+                my $jhistfile=jhistpath($jid);
+                if ( -e $jhistfile ) {
+                    $did=1;
+                    my $job=unpack_file($jhistfile);
+                    # possibly killed during messaging? in general this shouldn't happen anymore, so it's an error
+			        xlog("error", "Job $jid, reply to jinfo after archive");
+		            replymsg($start_wait{$jid}->{zid},jid=>$jid,status=>$job->{status}, error=>$job->{error}, hostname=>$job->{host});
+                }
+            }
+        }
+    }
+
     my $jcnt=0;
     for my $jid (@D) {
         next unless ($jid =~ /\.run$/);
@@ -1333,6 +1351,7 @@ sub schedule {
 			}
 		}
 	}
+
 
     my @nlist = values %nodes;
 	# no attempt here to prioritize jobs, just match and go
@@ -1498,7 +1517,7 @@ sub noderun {
 	$job->{id} = $jid;
 	if ($start_wait{$jid}) {
 		# info needed for status/stdio collection from execution node
-		replymsg($start_wait{$jid},jid=>$jid, ip=>$n->{ip}, port=>$n->{port}, hostname=>$n->{hostname});
+		replymsg($start_wait{$jid}->{zid},jid=>$jid, ip=>$n->{ip}, port=>$n->{port}, hostname=>$n->{hostname});
         delete $start_wait{$jid};
 	}
 	sendcmd($n->{ip},$n->{port},'xexec', $job);
@@ -1627,13 +1646,16 @@ sub srvexec {
         child_exit($kid, $?);
     }
 
-    for (keys(%io_wait)) {
-        if ($conf{expire_secs} && (time() > $io_wait{$_}->{time}+$conf{expire_secs})) {
-            delete $io_wait{$_};
-        }
-    }
-
 	if (time() > ($conf{lastpidtime}+$conf{ping_secs})) {
+		# check for expiration of io_wait
+		if ($conf{loop_num}>5) {
+            for (keys(%io_wait)) {
+                if ($conf{expire_secs} && (time() > $io_wait{$_}->{time}+$conf{expire_secs})) {
+                    delete $io_wait{$_};
+                }
+            }
+        }
+
         $did=1;	
 		opendir(D,"$conf{spool}/jpids") or die "Can't open jpids\n";
 
@@ -2809,7 +2831,7 @@ sub packdump {
 sub kill_job {
 	my %op = @_;
     my ($err) = waitmsg($conf{master}, $conf{master_port}, 'jkill', \%op);
-    if ($err =~ /Forward (\d+):?\s*([\d.]+):?(\d*)/) {
+    if ($err =~ /Forward (\d+):?\s*([\d.]+):?(\d*)/i) {
         my ($jid, $ip, $port) = ($1, $2, $3);
         $port = $conf{port} if !$port;
         ($err) = waitmsg($ip, $port, 'xabort', $jid, $op{sig}, $op{termio});
@@ -3359,12 +3381,12 @@ sub archive_job {
     if ($usage) {
         delete $usage->{ip};
         delete $usage->{id};
-        $usage->{status}=$status;
+        $usage->{status} = $status if defined $status;
         $job->{usage} = $usage;
     } else {
-        $job->{usage}->{status} = $status;
-
+        $job->{usage}->{status} = $status if defined($status);
     }
+
     $job->{status} = $status;
     if ($ip) {
         $job->{host} = $nodes{$ip} && $nodes{$ip}->{hostname} ? $nodes{$ip}->{hostname} : $ip;
@@ -3391,6 +3413,12 @@ sub archive_job {
 # can't query by guid anymore, except maybe in a history database
         unlink("$conf{spool}/guids/$job->{guid}");
     }
+
+    if ($start_wait{$jid}) {
+		# info needed for status/stdio collection from execution node
+		replymsg($start_wait{$jid}->{zid},jid=>$jid, status=>$status, error=>$job->{error}, hostname=>$job->{host});
+		delete $start_wait{$jid};
+	}
 }
 
 my $coder;
