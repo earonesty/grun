@@ -564,8 +564,6 @@ sub grun_client {
     $opt{frompid} = $$;
     $opt{guid} = $opt{jobx} ? "$conf{hostname}:$opt{jobx}" : create_guid();
 
-    RUN_JOB:
-
     %info = waitmsg($conf{master}, $conf{master_port}, 'run', \%opt);
 
     if (!%info) {
@@ -599,7 +597,7 @@ sub grun_client {
     if ($opt{wait}) {
         # wait for a job ip
         while (!defined($info{ip})) {
-            my %tmp = waitmsg_retry($conf{retry_secs}*1000, $conf{master}, $conf{master_port}, 'jinfo', $info{jid});
+            my %tmp = waitmsg_retry($conf{retry_secs}, $conf{master}, $conf{master_port}, 'jinfo', $info{jid});
 
             if ($tmp{error}) {
                 print STDERR $tmp{error}, "\n";
@@ -631,10 +629,6 @@ sub grun_client {
             if ($info{ip}=~/^\d/) {
                 if ($opt{io} && !($opt{err} && $opt{out}) ) {
                     ($stat, $err, $diderr) = waitio($info{ip}, $info{port}, $info{jid});
-                    if ($stat eq 'requeue') {
-                        xlog("error", "Requeue job required... this should never happen if 0MQ works.\n");
-                        goto RUN_JOB;
-                    }
                 } else {
                     my ($key, $dat) = waitmsg_retry(5000, $info{ip}, $info{port}, 'xstat', $info{jid});
                     $stat=$dat->{status};
@@ -1081,8 +1075,10 @@ sub process_message {
         # set wait flag, if i/o wasn't dumped
         my $stat=getjobstathash($jid);
 
+        # streams are ready, or job isn't done, or io wasn't dumped
         if ($ready||!$stat||!$stat->{dumped}) {
             my $end_time;
+            # job is done
             if ($stat && $stat->{rtime}) {
                 $end_time = (stat("$conf{spool}/jstat/$jid.stat"))[9]+$stat->{rtime};
             }
@@ -1144,10 +1140,11 @@ sub process_message {
                 } else {
                     # job is toast... but maybe some streams are waiting
                     my $job=unpack_file($jhistfile);
-                    my $job=unpack_file($jhistfile);
                     delete $job->{env};
                     $job->{host}="n/a" if !$job->{host} && !defined $job->{status};
                     $job->{ip}=host2ip($job->{host}) if !$job->{ip} && ! defined $job->{status};
+                    # needs ip!
+                    $job->{ip}="n/a" if defined $job->{status} && ! $job->{ip};
                     $job->{hostname}=$job->{host};
                     return(%$job);
                 }
@@ -1314,7 +1311,7 @@ sub schedule {
                     my $job=unpack_file($jhistfile);
                     # possibly killed during messaging? in general this shouldn't happen anymore, so it's an error
 			        xlog("error", "Job $jid, reply to jinfo after archive");
-		            replymsg($start_wait{$jid}->{zid},jid=>$jid,status=>$job->{status}, error=>$job->{error}, hostname=>$job->{host});
+		            replymsg($start_wait{$jid}->{zid},jid=>$jid,status=>$job->{status}, error=>$job->{error}, hostname=>$job->{host}, ip=>"n/a");
                 }
             }
         }
@@ -1855,7 +1852,7 @@ sub waitio {
 
     my $sock = _sendcmd($host, $port, 'xio', $jobid);
 
-    my $time = time();
+    my $stat_time;
     $|=1;
     my $needio = 2;
     while ((!defined $stat) || $needio) {
@@ -1863,12 +1860,9 @@ sub waitio {
         # wait up to 5 seconds for output
         zmq_poll([{
         socket=>$sock, events=>ZMQ_POLLIN, callback=> sub {
-        $got = 1;
         my ($ip, $trace, $key, $dat) = recvmsg($sock);
         if ($ip) {
-            if ($key eq 'requeue') {
-                return ('requeue');
-            }
+            $got = 1;
             my ($jid, $type, $cmd) = split /:/, $key;
             if ($type eq 'err') {
                 $diderr = 1 if $dat;
@@ -1880,6 +1874,14 @@ sub waitio {
             } elsif($type eq 'stat') {
                 $stat = $dat->{status};
                 $err = $dat->{error};
+                $stat_time=time() if !$stat_time;
+
+                if (time()>($stat_time+$conf{expire_secs})) {
+                    # i'm taking charge of dumping it
+                    xlog("error", "Job $jobid, dumping i/o, and reporting failure... took too long");
+                    $dat->{dumped}=1;
+                }
+
                 if ($dat->{dumped}) {
                     # don't wait longer for i/o if the i/o was lost
                     # todo... fail here if stat is 0?
@@ -1891,10 +1893,10 @@ sub waitio {
                 }
                 # what does the client do with the times?
             }
-            $time=time();
+        } else {
+            xlog("error", "Job $jobid, got unknown message in response to xio");
         }
-        $time = time()+30;
-        }}],5000 * 1000);
+        }}],$conf{retry_secs}*2);
 
         if (!$got) {
             # if you didn't get anything, ask again
@@ -1926,7 +1928,7 @@ sub waitmsg_retry {
                 ($ip, $trace, @msg) = recvmsg($sock);
                 $got=1;
         }},
-        ],$retry*1000);
+        ],$retry);
 
         if (!$got){
             $sock=_sendcmd(@_);
@@ -3256,7 +3258,7 @@ sub do_stream {
                 $ready = $data=~/ready|quit/;
                 $stream_quit = $data=~/quit/;
                 $got = 1;
-        }}],1000 * 1000);
+        }}],1000);
         if (!$stream_quit && !$got && (time() > ($time+$wait))) {
             # ask again ... are you ready for the stream
             zmq_send($sock, "", 0, ZMQ_SNDMORE);
@@ -3416,7 +3418,7 @@ sub archive_job {
 
     if ($start_wait{$jid}) {
 		# info needed for status/stdio collection from execution node
-		replymsg($start_wait{$jid}->{zid},jid=>$jid, status=>$status, error=>$job->{error}, hostname=>$job->{host});
+		replymsg($start_wait{$jid}->{zid},jid=>$jid, status=>$status, error=>$job->{error}, hostname=>$job->{host}, ip=>$job->{host}?$job->{host}:"n/a");
 		delete $start_wait{$jid};
 	}
 }
