@@ -38,7 +38,7 @@ use List::Util qw(min max);
 
 sub pretty_encode;
 
-our ($REVISION) = (q$LastChangedRevision: 619 $ =~ /(\d+)/);
+our ($REVISION) = (q$LastChangedRevision: 7285 $ =~ /(\d+)/);
 
 our $VERSION = "0.9.$REVISION";				# 0.10 wil be feature lock, after sql impl.  0.9.X is zmq & json::xs
 
@@ -597,7 +597,7 @@ sub grun_client {
     if ($opt{wait}) {
         # wait for a job ip
         while (!defined($info{ip})) {
-            my %tmp = waitmsg_retry($conf{retry_secs}, $conf{master}, $conf{master_port}, 'jinfo', $info{jid});
+            my %tmp = waitmsg_retry($conf{retry_secs}*1000, $conf{master}, $conf{master_port}, 'jinfo', $info{jid});
 
             if ($tmp{error}) {
                 print STDERR $tmp{error}, "\n";
@@ -605,6 +605,7 @@ sub grun_client {
             }
 
             if (!defined($tmp{ip})) {
+                xlog("error","Had to retry after a retry... BUG in job $save_jid\n");
                 sleep(5);
             } else {
                 %info=%tmp;
@@ -630,7 +631,7 @@ sub grun_client {
                 if ($opt{io} && !($opt{err} && $opt{out}) ) {
                     ($stat, $err, $diderr) = waitio($info{ip}, $info{port}, $info{jid});
                 } else {
-                    my ($key, $dat) = waitmsg_retry(5000, $info{ip}, $info{port}, 'xstat', $info{jid});
+                    my ($key, $dat) = waitmsg_retry($conf{retry_secs}*1000, $info{ip}, $info{port}, 'xstat', $info{jid});
                     $stat=$dat->{status};
                     $err=$dat->{error};
                 }
@@ -676,8 +677,9 @@ sub grun_client {
 sub readsocks {
     my $did;
     # identity & data received
-print "reading socks\n";
+    my $cnt;
     while (my $id= zmq_recvmsg($router,ZMQ_NOBLOCK)) {
+        ++$cnt;
         $did=1;
         $id = zmq_msg_data($id);
         if (zmq_getsockopt($router,ZMQ_RCVMORE)) {
@@ -693,14 +695,17 @@ print "reading socks\n";
                 print("Got resp: @resp\n");
                 replymsg($id, @resp);
             } else {
-                warn("No resp for $data\n");
+#                warn("No resp for $data\n");
             }
         }
         while (zmq_getsockopt($router,ZMQ_RCVMORE)) {
                 print("Discarding excess multipart data!\n");
         }
+        if ($cnt > 100000) {
+            xlog("error", "Getting flooded with messages");
+            last;
+        }
     }
-print "done reading socks\n";
     return $did;
 }
 
@@ -957,6 +962,7 @@ sub process_message {
 				xlog("trace", "Still alive $jid from $ip") if $trace;
 				touch("$conf{spool}/jobs/$jid:$ip.run")
 					if -e "$conf{spool}/jobs/$jid:$ip.run";
+    			return();                           # no dacks for jrun
 			} elsif (defined $opts{status}) {
 # job is done
                if ( -e "$conf{spool}/jobs/$jid:$ip.run" ) {
@@ -977,19 +983,18 @@ sub process_message {
                    } else {
 				        xlog("debug", "Bad job file $conf{spool}/jobs/$jid:$ip.run");
                    }
-			       sendcmd_nowait($conf{master}, $conf{master_port}, 'dack', jid=>$jid);
                 } else {
                     my $jhistfile=jhistpath($jid);
                     if (-e $jhistfile) {
                         # repeated acks are ok 
 				        xlog("debug", "Got a duplicate report from $conf{master} for job $jid ($jhistfile)");
-    			        sendcmd_nowait($conf{master}, $conf{master_port}, 'dack', jid=>$jid);
                     } else {
 				        xlog("error", "Got a report for an unknown job $jid, from $ip, status: $opts{status}");
                     }
                 }
+    			sendcmd_nowait($ip, $opts{replyport}?$opts{replyport}:$conf{port}, 'dack', jid=>$jid);
 			} else {
-				xlog("error", "Got a report for a job $jid with no status info");
+				xlog("error", "Got a report for a job $jid with no status info ($src_data)");
 			}
 # return ack even if not exists
 		}
@@ -1394,7 +1399,7 @@ sub schedule {
 			my $mem = $n->{tmem} - $n->{a_memory};
 			$mem = $n->{mem} if ($n->{tmem} == 0) || ($n->{mem} < $mem);
 
-			xlog("debug", "Sched $n->{ip}: jcpu:$job->{cpus}, norig: $n->{orig_cpus}, ncpu:$n->{cpus}, nall:$n->{a_cpus}, nav:$n->{avail}, cpus:$cpus , j:$job->{memory}?$n->{mem}>m:$mem");
+			xlog("debug", "Sched $jid: $n->{ip}: jcpu:$job->{cpus}, norig: $n->{orig_cpus}, ncpu:$n->{cpus}, nall:$n->{a_cpus}, nav:$n->{avail}, cpus:$cpus , j:$job->{memory}?$n->{mem}>m:$mem");
 
             if ($cpus <= 0) {
                 # pull the node out of the list
@@ -1484,14 +1489,14 @@ sub schedule {
 			if ($conf{backup_grid}) {
 				# TODO: fork exec to backup grid, and add to list of pids to track... as if you're an exec node
 			}
-			xlog("debug", "Can't find node for $jid, $jcnt jobs running\n") if $conf{trace};
+			xlog("debug", "Can't find node for $jid, $jcnt jobs running did=$did\n") if $conf{trace};
 		}
 	}
 
 	# kickstart nodes, if needed
 	$did|=kicknodes();
 
-	return undef;
+	return $did;
 }
 
 sub read_job {
@@ -1722,6 +1727,7 @@ sub notifystat {
 	xlog("debug", "Notifying status " . packdump($stat) . ".\n") if ($conf{trace} || $stat->{trace});
 
     # tell main queue about the status change
+    $stat->{replyport}=$conf{port};
 	sendcmd($conf{master},$conf{master_port}, 'jstat', $stat);
 }
 
@@ -1925,8 +1931,8 @@ sub waitmsg_retry {
         zmq_poll([
         {
                 socket=>$sock, events=>ZMQ_POLLIN, callback=> sub {
-                ($ip, $trace, @msg) = recvmsg($sock);
                 $got=1;
+                ($ip, $trace, @msg) = recvmsg($sock);
         }},
         ],$retry);
 
@@ -2736,10 +2742,10 @@ sub startdaemon {
 
             if (!$did) {
                 my $elapsed = Time::HiRes::time()-$start;
-                if ($elapsed < .15) {
+                if ($elapsed < .25) {
                     # fractional sleep
-#		            xlog("note", "Did nothing, fractional sleep for " . (.15-$elapsed));
-                    select(undef, undef, undef, .15-$elapsed);
+#		            xlog("debug", "Did nothing, fractional sleep for " . (.25-$elapsed));
+                    select(undef, undef, undef, .25-$elapsed);
                 }
             }
 #            print "HERE\n";
