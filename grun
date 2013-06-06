@@ -38,7 +38,7 @@ use List::Util qw(min max);
 
 sub pretty_encode;
 
-our ($REVISION) = (q$LastChangedRevision: 7285 $ =~ /(\d+)/);
+our ($REVISION) = (q$LastChangedRevision: 7319 $ =~ /(\d+)/);
 
 our $VERSION = "0.9.$REVISION";				# 0.10 wil be feature lock, after sql impl.  0.9.X is zmq & json::xs
 
@@ -311,7 +311,32 @@ sub grun_client {
     $opt{io} = 1;				# copy io back on the socket, implies wait
 
     Getopt::Long::Configure qw(require_order no_ignore_case passthrough);
-    GetOptions(\%opt, "file=s", "int|I", "memory|m=i", "hosts|h=s", "cpus|c=i", "io!", "wait!", "err|e=s", "out|o=s", "jobx|jobid|j=s", "verbose", "make|M", "debug|D", "env|E=s", "alert=s", "param|p=s@");
+
+    GetOptions(\%opt, "file=s", "int|I", "memory|m=i", "hosts|h=s", "cpus|c=i", "io!", "wait!", "err_a|err-append|ea=s", "err|e=s", "out|o=s", "out_a|out-append|oa=s", "ouer|out-err|oe=s", "ouer_a|out-err-append|oea=s", "jobx|jobid|j=s", "verbose", "make|M", "debug|D", "env|E=s", "alert=s", "param|p=s@");
+
+    if ((!!$opt{out} + !!$opt{out_a} + !!$opt{ouer} + !!$opt{ouer_a})>1) {
+        $config=undef;
+        die "ERROR: Specify only one of --out, --out-append, --out-err or --out-err-append\n\n" . usage()
+    }
+
+    if ((!!$opt{err} + !!$opt{err_a} + !!$opt{ouer} + !!$opt{ouer_a})>1) {
+        $config=undef;
+        die "ERROR: Specify only one of --err, --err-append, --out-err or --out-err-append\n\n" . usage()
+    }
+
+    if (my $t=$opt{out_a}?$opt{out_a}:$opt{ouer_a}) {
+        $opt{out}=$t;
+        $opt{out_a}=1;
+        delete $opt{ouer_a};
+    }
+    if (my $t=$opt{err_a}?$opt{err_a}:$opt{ouer_a}) {
+        $opt{err}=$t;
+        $opt{err_a}=1;
+        delete $opt{ouer_a};
+    }
+    if ($opt{ouer}) {
+        $opt{out}=$opt{err}=$opt{ouer}; delete $opt{ouer};
+    }
 
     my $verbose = $opt{verbose}; delete $opt{verbose};
     my $env = $opt{env}; delete $opt{env};
@@ -379,6 +404,7 @@ sub grun_client {
                     push @o, $t[$i+1] if $t[$i] eq '>' && $t[$i+1]=~/^\s*\w/;
                 }
             }
+            s/\%\!\>(>?\s*\S+)/>$1/g;
         }
         die "Unable to determine i/o for -M (make) semantics\n\n" . usage()
             if !@i || !@o;
@@ -629,7 +655,7 @@ sub grun_client {
             # shadow watcher....
             if ($info{ip}=~/^\d/) {
                 if ($opt{io} && !($opt{err} && $opt{out}) ) {
-                    ($stat, $err, $diderr) = waitio($info{ip}, $info{port}, $info{jid});
+                    ($stat, $err, $diderr) = waitio($info{ip}, $info{port}, $info{jid}, \%opt);
                 } else {
                     my ($key, $dat) = waitmsg_retry($conf{retry_secs}*1000, $info{ip}, $info{port}, 'xstat', $info{jid});
                     $stat=$dat->{status};
@@ -1850,7 +1876,7 @@ sub xlog {
 
 # wait for STDERR and STDOUT from a command
 sub waitio {
-    my ($host, $port, $jobid) = @_;
+    my ($host, $port, $jobid, $opt) = @_;
     my @resp;
     my $stat;
     my $err;
@@ -1860,7 +1886,7 @@ sub waitio {
 
     my $stat_time;
     $|=1;
-    my $needio = 2;
+    my $needio = !$opt->{err}+!$opt->{out};
     while ((!defined $stat) || $needio) {
         my $got = 0;
         # wait up to 5 seconds for output
@@ -1902,7 +1928,7 @@ sub waitio {
         } else {
             xlog("error", "Job $jobid, got unknown message in response to xio");
         }
-        }}],$conf{retry_secs}*2);
+        }}],$conf{retry_secs}*2*1000);
 
         if (!$got) {
             # if you didn't get anything, ask again
@@ -2104,10 +2130,15 @@ Execution Options:
 
     -noio           disable io-processing, but wait for completion
     -nowait         no io and don't wait, just start the command
-    -e|rr FILE      write stderr directly to FILE, no spool
-    -o|ut FILE      write stdout directly to FILE, no spool
+    -e|rr FILE      write stderr directly to FILE, no spool *
+    -o|ut FILE      write stdout directly to FILE, no spool *
 
-If the command contains shell metacharacters, it's prefixed with "bash -c".
+All options can be abbreviated to uniqueness.
+
+* You can append error & output with -oa, -ea or -out-append -err-append, 
+or both with -oea, or --out-err-append.
+
+If the command contains shell metacharacters, it's wrapped in a bash script
 EOF
 
 	$u .= <<'EOF' if $make;
@@ -2119,9 +2150,13 @@ Make Semantics:
 	#o:file    Output file, removed the command line before executing
 	< file     Input file, left in the command line
 	> file     Output file, left in the command line
+    %!>file    Output, but don't set as a dependency
 
 For Example:
 	grun "gzip %i:x.foo #o>x.foo.gz"
+
+If a command fails under Make Semantics, the output file(s) will be 
+set to FILE.failed.
 
 EOF
 
@@ -3004,13 +3039,21 @@ sub execute_job {
                 my $ok=1;	
                 eval {
                     if ($opts->{out}) {
-                        $ok&&=open(STDOUT, ">$opts->{out}");
+						if ($opts->{out_a}) {
+                           $ok&&=open(STDOUT, ">>$opts->{out}");
+                        } else {
+                           $ok&&=open(STDOUT, ">$opts->{out}");
+                        }
                         if ($opts->{out} eq $opts->{err}) {
                             $ok&&=open(STDERR, ">&STDOUT");
                         }
                     }
                     if ($opts->{err} && !(($opts->{out} eq $opts->{err}))) {
-                            $ok&&=open(STDERR, ">$opts->{err}");
+							if ($opts->{err_a}) {
+								$ok&&=open(STDERR, ">>$opts->{err}");
+							} else {
+								$ok&&=open(STDERR, ">$opts->{err}");
+							}
                     }
                     if ($opts->{io}) {
                        my $confarg = "-C $conf{config}";                # same config!
