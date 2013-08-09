@@ -38,7 +38,7 @@ use List::Util qw(min max);
 
 sub pretty_encode;
 
-our ($REVISION) = (q$LastChangedRevision: 8220 $ =~ /(\d+)/);
+our ($REVISION) = (q$LastChangedRevision: 8221 $ =~ /(\d+)/);
 
 our $VERSION = "0.9.$REVISION";				# 0.10 wil be feature lock, after sql impl.  0.9.X is zmq & json::xs
 
@@ -3060,9 +3060,9 @@ sub execute_job {
             chown($uid,0,$shfile);
 
             my $hard_factor = defined($opts->{hard_factor}) ? $opts->{hard_factor} : $conf{hard_factor};
-            if ($hard_factor) {eval{
-                # todo... other limits
-                print SHFILE "ulimit -v " . int(($opts->{memory} * $conf{hard_factor})) . "\n" 
+            if ($hard_factor && $opts->{memory}) {eval{
+                # add 4mb for o/s stuff to load
+                print SHFILE "ulimit -v " . (4000+int(($opts->{memory} * $conf{hard_factor}))) . "\n" 
                     if $opts->{memory};
             }}
 
