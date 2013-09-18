@@ -49,18 +49,17 @@ grun -c 4 -m 500 perl uses4cpusbutlessram.pl
 
 * What it does now:
 
-It does the queueing, i/o, node-matching to requirements, and has a decent config system.   Trying to leverage perl a lot.  I simluated 1000 nodes and 10K jobs and it has no problem with that.  The forkless socket system is a big help.   It times every command and records memory/cpu/io.
+It does the queueing, i/o, node-matching to requirements, and has a decent config system.   Trying to leverage perl a lot.  I simluated 1000 nodes and 10K jobs and it has no problem with that.  The forkless socket system is a big help.   It times every command and records memory/cpu/io.  Ulimits are set on jobs, and can be scaled to a multiple of requested resources.   Jobs are editable, killable, suspendable, etc.  
+
+Grun comes with a perl module that allows you to execute perl functions on remote hosts by copying the memory and code over to the remote machine.
 
 * What it doesn't do yet (TODO):
 
 - needs a "plugin" architecture.  Should be easy with perl.
 - job prioritization.   To keep 100k jobs sorted by rank on disk, i'd use sqlite.
-- smarter: both streaming & windowed-recoverable (N mb backtrack) i/o.
-- lock resources more at the start of a job and possible back off to "true usage" over time.
-- throttle ram/cpu/disk to requested (soft/hard limits - easy)
 - halt jobs when overutilized and resume them when stuff backs off
 - graceful restart... with socket handoff to child
-- harrass users when /var is close to full, or cpu/ram requested were too high/low, or other (configurable) issues
+- harrass users when queue drive is close to full, or cpu/ram requested were too high/low, or other (configurable) issues
 
 
 * Goals:
@@ -73,9 +72,8 @@ Configurable	Make up lots of new things you want it to keep track of and allocat
 
 * Features to avoid:
 
-No security	Grun has no security.   It has to be behind a firewall on dedicated machines.  This limits it, and keeps it simple.  It's not hard to put up an ssh tunnel, and make it work at EC2.   But I'm not building in kerberos or stuff like that.
+No security     Grun has no security.   It has to be behind a firewall on dedicated machines.  This limits it, and keeps it simple.  It's not hard to put up an ssh tunnel, and make it work at EC2.   But I'm not building in kerberos or stuff like that.
 
-One platform	Grun only works on unix-like machines that have perl installed.
+One platform    Grun only works on unix-like machines that have perl installed.
 
-Nothing fancy	Grun doesn't support MPI and other fancy grid things.  ( Use condor for that, it works great. )
-
+Nothing fancy   Grun doesn't support MPI and other fancy grid things (although you can now layer map-reduce stuff on it)
