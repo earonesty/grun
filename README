@@ -8,26 +8,24 @@ You need perl.  I tried not to use any modules that don't come with perl.  Put i
 
 Example /etc/grun.conf on the master node:
 
+master:    foo.mydomain.local
 services:   queue
 log_file:  /var/log/grun.log
 
-Example /etc/grun.conf on a compute node:
+Example /etc/grun.conf on a many compute nodes:
 
 master:    foo.mydomain.local
 services:   exec
 log_file:  /var/log/grun.log
 
-Example of a conf on an ssh tunneled EC2 node, with autostaging via gwrap:
+Once you have those two daemons running (grun -d), then you can, on either node, do this:
 
-services:       exec
-master:         127.0.0.1:5184
-bind:           127.0.0.2:5184
-wrap:           /usr/bin/gwrap
-fetch_path:     /opt:/mnt/ufs
+grun hostname
 
-Compile gwrap (if desired):
+And it will show you which node the command was run on.
 
-gcc -nostartfiles -fpic -shared -o gwrap.so gwrap.c -ldl
+Grun doesn't comingle job scheduling with workflows, feel free to 
+use any workflow manager, and use grun to schedule jobs.
 
 * What you do with it:
 
@@ -47,18 +45,25 @@ IE:
 perl usesalotofmemory.pl
 grun -c 4 -m 500 perl uses4cpusbutlessram.pl
 
+The memory and cpu usage of the parent program will go to zero as the second script is launched.   In this way very complex jobs can be scheduled, without a special "workflow" system.  Just use bash, perl or whatever.   Grun does a good job of keeping the cluster full.
+
 * What it does now:
 
-It does the queueing, i/o, node-matching to requirements, and has a decent config system.   Trying to leverage perl a lot.  I simluated 1000 nodes and 10K jobs and it has no problem with that.  The forkless socket system is a big help.   It times every command and records memory/cpu/io.  Ulimits are set on jobs, and can be scaled to a multiple of requested resources.   Jobs are editable, killable, suspendable, etc.  
+It does the queueing, i/o, node-matching to requirements, suspend/resume, priorities, and has a great config system.   Trying to leverage perl a lot.  Grun has run millions of jobs in a production cluster with about 40 nodes of 48 cores each.  The forkless socket system is a big help.   Grun times every command and records memory/cpu/io.  Ulimits are set on jobs, and can be scaled to a multiple of requested (elbowing).   Jobs are editable, killable, suspendable, etc.  
+Grun comes with a perl module that allows you to execute perl functions on remote hosts by copying the memory and code over to the remote machine. For example:
 
-Grun comes with a perl module that allows you to execute perl functions on remote hosts by copying the memory and code over to the remote machine.
+use Grun;
+
+my $results = grun(\&mycrazyfunction, "param");
+
+It decompiles the function locally, and recompiles remotely... so you have to have the same perl modules installed on the remove host!
+
 
 * What it doesn't do yet (TODO):
 
 - needs a "plugin" architecture.  Should be easy with perl.
 - graceful restart... with socket handoff to child
 - harrass users when queue drive is close to full, or cpu/ram requested were too high/low, or other (configurable) issues
-
 
 * Goals:
 
@@ -75,3 +80,17 @@ No security     Grun has no security.   It has to be behind a firewall on dedica
 One platform    Grun only works on unix-like machines that have perl installed.
 
 Nothing fancy   Grun doesn't support MPI and other fancy grid things (although you can now layer map-reduce stuff on it)
+
+* Advanced usage: 
+
+Example of a config on an ssh tunneled EC2 node (tested), with autostaging via gwrap:
+
+services:       exec
+master:         127.0.0.1:5184
+bind:           127.0.0.2:5184
+wrap:           /usr/bin/gwrap
+fetch_path:     /opt:/mnt/ufs
+
+gwrap (source only) is a useful tool.  Used right, it will copy all the dependent files to the remote host, only as needed, and then, when the remote program is finished, it will copy all the output files back to the local host.   Of course, this *could* be built in to grun, vial the -M option, but it isn't yet.   gwrap is not yet heavily used in production, and if you do decide to use it heavly, please let me know... I'll help add things like logging, failure recovery as needed.
+
+
