@@ -33,7 +33,7 @@ And it will show you which node the command was run on, confirming that your ins
 
 Submit jobs, grun puts them in a queue, the queue is on disk so machines can lose connection any time, and jobs keep going.   Specify resouces requirements, or not - and have it figure stuff out.
 
-grun will assign jobs randomly, and will trend toward fill up one machine at a time, in case big jobs come along.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.  If all the machines are busy, jobs will queue up.  Resources are soft-locked by jobs until they are finished, and if a non-grun job is using a machine, it's accounted for. 
+grun will assign jobs randomly, and will tend to fill up one machine at a time, in case big jobs come along.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.  If all the machines are busy, jobs will queue up.  Resources are soft-locked by jobs until they are finished, and if a non-grun job is using a machine, it's accounted for. 
 
 NOTE: Jobs that require changing sets of resources should call grun themselves - forcing later commands to requeue:
 
