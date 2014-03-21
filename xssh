@@ -43,12 +43,12 @@ my @mnt;
 
 readconf();
 
-GetOptions(\%opt, "nodes=s@", "echo", "plain", "seq", "sudo", "debug", "recursive") || die usage();
+GetOptions(\%opt, "nodes=s@", "echo", "plain", "seq", "sudo", "debug", "recursive","force","list") || die usage();
 
 push @{$opt{nodes}}, $defnodes if (!defined($opt{nodes}));
 $opt{mode} = $0 =~ /diff/ ? 'diff' : $0 =~ /sync/ ? 'sync' : 'ssh';
 
-die usage() unless @ARGV;
+die usage() unless @ARGV || $opt{list};
 
 my $spid;
 # this kills kids when you press control-C
@@ -64,6 +64,13 @@ my @nodes=expandnodes($opt{nodes});
 my %seen;
 foreach my $node (@nodes) {chomp; $seen{$node}=1 if $node; }
 @nodes=keys(%seen);
+
+if ($opt{list}) {
+	for (@nodes) {
+		print $_, "\n";
+	}
+	exit 0;
+}
 
 print STDERR "Nodes: " . join(' ', @nodes). "\n\n";
 
@@ -125,7 +132,7 @@ if ($opt{mode} eq 'sync') {
 
                 for (@mnt) {
                         if ($f =~ /^\Q$_\E/) {
-                                die "$_ is mounted now, so no need to $opt{mode}"
+                                die "$_ is mounted now, so no need to $opt{mode}\n" unless $opt{force}
                         }
                 }
 
@@ -254,6 +261,7 @@ usage: xsync [-n \"n1 n2 ...\"] [-a] file1 [... fileN]\n
         -a[ll]  : run on all available machines
         -e[cho] : echo on
         -seq    : run each node sequentially
+        -list   : list all nodes
 
 Node Names:
 You can specify nodes as single digits, whole hostnames, or
@@ -261,7 +269,7 @@ You can specify nodes as single digits, whole hostnames, or
 
 Config file example:
 
-rewrite: (\d)       to: my-node-\$1
+rewrite: (\d)       to: my-node-$1
 nodes: 0 1 2 3 4 my-head-node
 EOF
 }
@@ -352,6 +360,9 @@ sub expandnodes {
 	for my $x (@x) {
 		@d = grep !/^\Q$x\E$/, @d;
 	}
+    if (!$opt{seq}) {
+        fisher_yates_shuffle(\@d) if @d;
+    }
 	return @d;
 }
 
@@ -367,3 +378,13 @@ sub rewrite {
 	return $n;
 }
 
+sub fisher_yates_shuffle
+{
+    my $array = shift;
+    my $i = @$array;
+    while ( --$i )
+    {
+        my $j = int rand( $i+1 );
+        @$array[$i,$j] = @$array[$j,$i];
+    }
+}
