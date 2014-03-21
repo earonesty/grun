@@ -49,7 +49,7 @@ The memory and cpu usage of the parent program will go to zero as the second scr
 
 * What it does now:
 
-It does the queueing, i/o, node-matching to requirements, suspend/resume, priorities, and has a great config system.   The "auto conf" allows sysadmins to create policies based on the parameters or script contens of a job.  Grun has run millions of jobs in a production cluster with about 52 nodes of 24-48 cores each.  Grun times every command and records memory/cpu/io.  Ulimits are set on jobs, and can be scaled to a multiple of requested (elbowing).   Jobs are editable, killable & suspend/resumable.
+It does the queueing, i/o, node-matching to requirements, suspend/resume, priorities, and has a great config system.   The "auto conf" allows sysadmins to create policies based on the parameters or script contens of a job.  Grun has run millions of jobs in a production cluster with about 52 nodes of 24-48 cores each.  Grun times every command and records memory/cpu/io.  Ulimits are set on jobs, and can be scaled to a multiple of requested (elbowing).   Jobs are editable, killable & suspend/resumable.  You can specify "make like" semantics on jobs and it will check inputs/outputs and run jobs only if needed.
  
 Grun comes with a perl module that allows you to execute perl functions on remote hosts by copying the memory and code over to the remote machine. For example:
 

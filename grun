@@ -39,7 +39,7 @@ use File::Basename qw(dirname);
 
 sub pretty_encode;
 
-our ($REVISION) = (q$LastChangedRevision: 15453 $ =~ /(\d+)/);
+our ($REVISION) = (q$LastChangedRevision: 15460 $ =~ /(\d+)/);
 
 our $VERSION = "0.9.$REVISION";				# 0.10 wil be feature lock, after sql impl.  0.9.X is zmq & json::xs
 
@@ -2403,13 +2403,14 @@ EOF
 Execution Options:
     -f|ile FILE     Read FILE for job options (mem, cpu, cmd, etc)
     -m|em INT       memory minimum in MB
-    -c|pu CPUS	    minimum number of cpus 
+    -c|pu CPUS      minimum number of cpus 
     -host N1,N2     specify certain hosts
     -j|obid TEXT    user-supplied job ID
     -v|erbose       print job id, execution node and stats to STDERR
-    -M|make	    only run job if inputs are newer than outputs
+    -M|make         only run job if inputs are newer than outputs
+    -r|priority INT  run job with only run job if inputs are newer than outputs
 
-    -noio           disable io-processing, but wait for completion
+    -noio             disable io-processing, but wait for completion
     -nowait         no io and don't wait, just start the command
     -e|rr FILE      write stderr directly to FILE, no spool *
     -o|ut FILE      write stdout directly to FILE, no spool *
@@ -2425,19 +2426,21 @@ EOF
 	$u .= <<'EOF' if $make;
 Make Semantics:
 
-	%i:file    Input file, left in the command line
-	#i:file    Input file, removed the command line before executing
-	%o:file    Output file, left in the command line
-	#o:file    Output file, removed the command line before executing
-	< file     Input file, left in the command line
-	> file     Output file, left in the command line
+    %i:file    Input file, left in the command line
+    #i:file    Input file, removed the command line before executing
+    %o:file    Output file, left in the command line
+    #o:file    Output file, removed the command line before executing
+    < file     Input file, left in the command line
+    > file     Output file, left in the command line
     %!>file    Output, but don't set as a dependency
 
 For Example:
-	grun "gzip %i:x.foo #o>x.foo.gz"
+    grun "gzip %i:x.foo #o>x.foo.gz"
 
 If a command fails under Make Semantics, the output file(s) will be 
 set to FILE.failed.
+
+NFS sync works better with make semantics.
 
 EOF
 
@@ -2496,32 +2499,39 @@ Be careful with match code.  It it's slow, it will kill the performance of your 
 
 Common variables:
 
-    master          (localhost) Hostname[:port] of master node
-    spool           (/var/spool/grun) Location for queue & io temp storage
-    log_file	    Location of the log
-    services        Must be 'queue' and/or 'exec'
-    port            Port to listen on (5184)
-    bind[:port]     Address to bind to (0.0.0.0)
-    trace           Turn tracing on for the whole server
+    master            (localhost) Hostname[:port] of master node
+    spool             (/var/spool/grun) Location for queue & io temp storage
+    log_file          Location of the log
+    services          Must be 'queue' and/or 'exec'
+    port              Port to listen on (5184)
+    bind[:port]       Address to bind to (0.0.0.0)
+    trace             Turn tracing on for the whole server
 
 Queue config vars:
 
-    env             (PATH) List of environment varialbes to copy to the processes.  An asterisk (*) means 'ALL'
-    expire_secs     (0) If set, jobs that aren't pinged in time get (failed or retried)
-    expire_action   (retry) Can be 'retry', 'fail'
-    idle_load	    (.3) If load is less than this amount, then considered idle
-    io_keep	    (3600) Time to keep unretrieved stdio files (0=forever)
-    log_file        Where to send "xlog" output
-    pid_file	    (/var/run/grun.pid)
-    ping_secs       (30) Nodes ping the master this often.
-    ping_expire     (2*$ping_secs) Drop a node if it doesn't ping in time
+    env               (PATH) List of environment varialbes to copy to the processes.  An asterisk (*) means 'ALL'
+    expire_secs       (0) If set, jobs that aren't pinged in time get (failed or retried)
+    expire_action     (retry) Can be 'retry', 'fail'
+    idle_load         (.3) If load is less than this amount, then considered idle
+    io_keep           (3600) Time to keep unretrieved stdio files (0=forever)
+    log_file          Where to send "xlog" output
+    pid_file          (/var/run/grun.pid)
+    ping_secs         (30) Nodes ping the master this often.
+    ping_expire       (2*$ping_secs) Drop a node if it doesn't ping in time
+
+Cli vars & defaults:
+
+    nfs_sync          (1) Whether to force-sync the directory cache after a job is run
+    default_cpu       (1) Default cpu reservation
+    default_memory    (1m) Default memory for jobs
+    default_priority  (20) Default priority for jobs
 
 Execution node config vars:
 
-    match           Perl code that must eval to TRUE for a node match
-    full_match      (1) If jobs queue is full, this is evaluated
-    full_exec       If full match returns true, then this command is run
-    wrap            Job command wrapper
+    match             Perl code that must eval to TRUE for a node match
+    full_match        (1) If jobs queue is full, this is evaluated
+    full_exec         If full match returns true, then this command is run
+    wrap              Job command wrapper
     
 EOF
    return $u;
