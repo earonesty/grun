@@ -56,8 +56,6 @@ Grun comes with a perl module that allows you to execute perl functions on remot
 * What it doesn't do yet (TODO):
 
 - needs a "plugin" architecture.  Should be easy with perl.
-- job prioritization.   To keep 100k jobs sorted by rank on disk, i'd use sqlite.
-- halt jobs when overutilized and resume them when stuff backs off
 - graceful restart... with socket handoff to child
 - harrass users when queue drive is close to full, or cpu/ram requested were too high/low, or other (configurable) issues
 
