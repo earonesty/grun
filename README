@@ -4,7 +4,12 @@ A lightweight replacement for job queueing systems like LSF, Torque, condor, SGE
 
 * Installation:
 
-You need perl.  I tried not to use any modules that don't come with perl.  Put it in /usr/bin.   Type grun -h for help with the configuration/setup.  Basically you stick it on all the machines, and you put a "master" in the main config.   
+You need perl and ZMQ::LibZMQ3
+
+    apt-get install libzmq3
+    cpanm ZMQ::LibZMQ3
+
+Put it in /usr/bin.   Type grun -h for help with the configuration/setup.  Basically you stick it on all the machines, and you put a "master" in the main config.  It is, far and away, the easiest grid job queuing system out there.
 
 Example /etc/grun.conf on the master node:
 
@@ -20,20 +25,15 @@ log_file:  /var/log/grun.log
 
 Once you have those two daemons running (grun -d), then you can, on either node, do this:
 
-grun hostname
+    grun hostname
 
-And it will show you which node the command was run on.
-
-Grun doesn't comingle job scheduling with workflows, feel free to 
-use any workflow manager, and use grun to schedule jobs.
+And it will show you which node the command was run on, confirming that your installtion works.
 
 * What you do with it:
 
 Submit jobs, grun puts them in a queue, the queue is on disk so machines can lose connection any time, and jobs keep going.   Specify resouces requirements, or not - and have it figure stuff out.
 
-grun will assign jobs randomly, and will tend to fill up one machine at a time.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.  If all the machines are busy, jobs will queue up.  Resources are soft-locked by jobs until they are finished, and if a non-grun job is using a machine, it's accounted for.   
-
-That's about it.
+grun will assign jobs randomly, and will trend toward fill up one machine at a time, in case big jobs come along.   It should figure NFS mounts, and the right thing to do with them autoamtically.  It has a fast i/o subsystem suitable for terabyte files.  If all the machines are busy, jobs will queue up.  Resources are soft-locked by jobs until they are finished, and if a non-grun job is using a machine, it's accounted for. 
 
 NOTE: Jobs that require changing sets of resources should call grun themselves - forcing later commands to requeue:
 
@@ -45,33 +45,32 @@ IE:
 perl usesalotofmemory.pl
 grun -c 4 -m 500 perl uses4cpusbutlessram.pl
 
-The memory and cpu usage of the parent program will go to zero as the second script is launched.   In this way very complex jobs can be scheduled, without a special "workflow" system.  Just use bash, perl or whatever.   Grun does a good job of keeping the cluster full.
+The memory and cpu usage of the parent program will go to zero as the second script is launched.   In this way very complex jobs can be scheduled, without a special workflow system.  Just use bash, perl or ruby.
 
 * What it does now:
 
-It does the queueing, i/o, node-matching to requirements, suspend/resume, priorities, and has a great config system.   Trying to leverage perl a lot.  Grun has run millions of jobs in a production cluster with about 40 nodes of 48 cores each.  The forkless socket system is a big help.   Grun times every command and records memory/cpu/io.  Ulimits are set on jobs, and can be scaled to a multiple of requested (elbowing).   Jobs are editable, killable, suspendable, etc.  
+It does the queueing, i/o, node-matching to requirements, suspend/resume, priorities, and has a great config system.   The "auto conf" allows sysadmins to create policies based on the parameters or script contens of a job.  Grun has run millions of jobs in a production cluster with about 52 nodes of 24-48 cores each.  Grun times every command and records memory/cpu/io.  Ulimits are set on jobs, and can be scaled to a multiple of requested (elbowing).   Jobs are editable, killable & suspend/resumable.
+ 
 Grun comes with a perl module that allows you to execute perl functions on remote hosts by copying the memory and code over to the remote machine. For example:
 
-use Grun;
+    use Grun;
+    my $results = grun(\&mycrazyfunction, "param");
 
-my $results = grun(\&mycrazyfunction, "param");
-
-It decompiles the function locally, and recompiles remotely... so you have to have the same perl modules installed on the remove host!
-
+It decompiles the function locally, and recompiles remotely.
 
 * What it doesn't do yet (TODO):
 
 - needs a "plugin" architecture.  Should be easy with perl.
-- graceful restart... with socket handoff to child
-- harrass users when queue drive is close to full, or cpu/ram requested were too high/low, or other (configurable) issues
+- graceful restart... with socket handoff (it's always safe to restart... but it can cause waiters to pause)
+- harrass users when queue drive is close to full, or cpu/ram was too high to ever run, or other (configurable) issues that users have
 
 * Goals:
 
-Small 		Keep the code under a few k lines, should be readable.   Lots of comments.
-Simple 		Easy configuration, guesses default values
-Smart		Keeps track of stats.  Learns what to do with things.   Puts the right jobs on the right machines.
-Fast		Hundreds of thousands of jobs per hour on tens of thousands of machines should be easy.
-Configurable	Make up lots of new things you want it to keep track of and allocate to jobs.
+Small           Keep the code under a few k lines, should be readable.   Lots of comments.
+Simple          Easy configuration, guesses default values
+Smart           Keeps track of stats.  Learns what to do with things.   Puts the right jobs on the right machines.
+Fast            Hundreds of thousands of jobs per hour on tens of thousands of machines should be easy.
+Configurable    Make up lots of new things you want it to keep track of and allocate to jobs (like disk i/o, user limits, etc.)
 
 * Features to avoid:
 
@@ -79,7 +78,7 @@ No security     Grun has no security.   It has to be behind a firewall on dedica
 
 One platform    Grun only works on unix-like machines that have perl installed.
 
-Nothing fancy   Grun doesn't support MPI and other fancy grid things (although you can now layer map-reduce stuff on it)
+Nothing fancy   Grun doesn't support MPI and other fancy grid things (although you can layer map-reduce on it)
 
 * Advanced usage: 
 
