@@ -90,6 +90,6 @@ bind:           127.0.0.2:5184
 wrap:           /usr/bin/gwrap
 fetch_path:     /opt:/mnt/ufs
 
-gwrap (source only) is a useful tool.  Used right, it will copy all the dependent files to the remote host, only as needed, and then, when the remote program is finished, it will copy all the output files back to the local host.   Of course, this *could* be built in to grun, vial the -M option, but it isn't yet.   gwrap is not yet heavily used in production, and if you do decide to use it heavly, please let me know... I'll help add things like logging, failure recovery as needed.
+gwrap (source only) is a useful tool.  Used right, it will copy all the dependent files to the remote host, only as needed, and then, when the remote program is finished, it will copy all the output files back to the local host.   Of course, this *could* be built in to grun, via the -M option, but it isn't yet.   gwrap is not yet heavily used in production, and if you do decide to use it heavly, please let me know... I'll help add things like logging, failure recovery as needed.
 
 
