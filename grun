@@ -2463,7 +2463,7 @@ Make Semantics:
     %!>file    Output, but don't set as a dependency
 
 For Example:
-    grun "gzip %i:x.foo #o>x.foo.gz"
+    grun -M "gzip %i:x.foo #o>x.foo.gz"
 
 If a command fails under Make Semantics, the output file(s) will be 
 set to FILE.failed.
