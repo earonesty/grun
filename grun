@@ -3222,13 +3222,32 @@ sub samehost {
 	return $h1 eq $h2;
 }
 
-sub host2ip {
+sub raw_host2ip {
   my (@octets, $raw_addr, $ip);
   return $_[0] if $_[0] =~ /^(\d+\.){3}\d+$/;
   $raw_addr = (gethostbyname($_[0]))[4];
   @octets = unpack("C4", $raw_addr);
   $ip = join(".", @octets);
   return($ip);
+}
+
+sub host2ip {
+  my ($test_addr, $tmpstr, $mDNSdomain);
+  return $_[0] if $_[0] =~ /^(\d+\.){3}\d+$/;
+  $test_addr = raw_host2ip($_[0]);
+  if (!$test_addr) {
+    $mDNSdomain = '.local';
+    if (length $_[0] > length $mDNSdomain) {
+      $tmpstr = substr($_[0], -(length $mDNSdomain));
+      if (!($tmpstr eq $mDNSdomain)) {
+        $test_addr = raw_host2ip($_[0] . $mDNSdomain);
+      }
+    } else {
+      $test_addr = raw_host2ip($_[0] . $mDNSdomain);
+    }
+  }
+
+  return ($test_addr);
 }
 
 sub packdump {
