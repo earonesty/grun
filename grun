@@ -108,6 +108,9 @@ $def{config} = $config if $config;
 
 init();
 
+# this fixes issues on some systems, probably a tty thing
+system("echo . >> /dev/null")
+
 my $stream_quit = 0;
 
 if ($ARGV[0] eq '-X') {
